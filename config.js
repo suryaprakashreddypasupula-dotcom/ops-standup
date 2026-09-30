@@ -4,7 +4,7 @@
 window.OPS_STANDUP_CONFIG = {
   // Google Cloud OAuth 2.0 Web client id, created in the Hike Google Workspace
   // project with the consent screen set to "Internal". See README.md.
-  GOOGLE_CLIENT_ID: "",
+  GOOGLE_CLIENT_ID: "475032873259-4fn0sf7bu50qtnf5tir1nhl790pgef6p.apps.googleusercontent.com",
 
   // Only accounts on this domain are offered at sign-in (hint only; the Sheet's
   // sharing is what actually enforces access).
