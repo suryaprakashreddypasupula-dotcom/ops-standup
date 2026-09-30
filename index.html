@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Ops Standup</title>
+  <link rel="stylesheet" href="styles.css?v=1">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Ops Standup</div>
+    <nav class="tabs" id="tabs" hidden>
+      <button class="tab active" data-page="summary">Ops Summary</button>
+      <button class="tab" data-page="delinquency">Delinquency by Station</button>
+    </nav>
+    <div class="spacer"></div>
+    <div class="pack" id="pack-title"></div>
+    <a class="sheet-link" id="sheet-link" target="_blank" rel="noopener" hidden>Open Sheet</a>
+    <div class="user" id="user"></div>
+    <button class="btn ghost" id="signout" hidden>Sign out</button>
+  </header>
+
+  <main id="main">
+    <section class="gate" id="gate">
+      <h1>Ops Standup</h1>
+      <p class="muted">
+        Sign in with your Hike Google account. Data is read from that night's
+        Google Sheet; nothing is stored on this site.
+      </p>
+      <div class="gate-row">
+        <label for="sheet-input">Sheet link or id</label>
+        <input id="sheet-input" type="text" placeholder="Paste the Ops Standup Sheet link from the nightly email" spellcheck="false">
+      </div>
+      <button class="btn primary" id="signin">Sign in with Google</button>
+      <p class="error" id="gate-error" hidden></p>
+      <p class="muted small" id="config-hint" hidden>
+        The site owner has not set a Google OAuth client id yet (see <code>config.js</code>).
+      </p>
+    </section>
+
+    <section class="page" id="page-summary" hidden></section>
+    <section class="page" id="page-delinquency" hidden></section>
+  </main>
+
+  <aside class="drawer" id="drawer" hidden>
+    <div class="drawer-head">
+      <div>
+        <div class="drawer-title" id="drawer-title"></div>
+        <div class="drawer-sub muted" id="drawer-sub"></div>
+      </div>
+      <button class="btn ghost" id="drawer-close" aria-label="Close">×</button>
+    </div>
+    <div class="drawer-body" id="drawer-body"></div>
+  </aside>
+  <div class="scrim" id="scrim" hidden></div>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="config.js?v=1"></script>
+  <script src="demo.js?v=1"></script>
+  <script src="app.js?v=1"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+</body>
+</html>
