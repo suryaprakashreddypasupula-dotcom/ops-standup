@@ -114,15 +114,20 @@
       }
       state.tokenClient.callback = (resp) => {
         if (resp.error) return reject(new Error(resp.error_description || resp.error));
+        const granted = String(resp.scope || "");
+        if (granted && !granted.includes("https://www.googleapis.com/auth/spreadsheets")) {
+          state.token = null;
+          return reject(new Error("Google signed you in without Sheets access. Add the spreadsheets scope under Data Access, then sign in again."));
+        }
         state.token = resp.access_token;
         state.tokenExp = Date.now() + (Number(resp.expires_in || 3600) - 60) * 1000;
         resolve(state.token);
       };
       state.tokenClient.error_callback = (e) => reject(new Error(e && e.message ? e.message : "Sign-in was closed"));
-      // prompt "" lets Google skip the chooser/consent when the browser already
-      // has a session that consented before; the first visit still sees both.
+      // Always show consent so a token issued before the Sheets scope was
+      // added is not reused.
       const login_hint = localStorage.getItem(LS_HINT) || undefined;
-      state.tokenClient.requestAccessToken({ prompt: "", login_hint });
+      state.tokenClient.requestAccessToken({ prompt: "consent", login_hint });
     });
   }
 
