@@ -25,12 +25,12 @@
     <section class="gate" id="gate">
       <h1>Ops Standup</h1>
       <p class="muted">
-        Sign in with your Hike Google account. Data is read from that night's
-        Google Sheet; nothing is stored on this site.
+        Sign in with your Hike Google account. The page opens the newest
+        Ops Standup Sheet in Drive. Leave the box empty.
       </p>
       <div class="gate-row">
-        <label for="sheet-input">Sheet link or id</label>
-        <input id="sheet-input" type="text" placeholder="Paste the Ops Standup Sheet link from the nightly email" spellcheck="false">
+        <label for="sheet-input">A specific night (optional)</label>
+        <input id="sheet-input" type="text" placeholder="Leave empty for the pack that just went out" spellcheck="false">
       </div>
       <button class="btn primary" id="signin">Sign in with Google</button>
       <p class="error" id="gate-error" hidden></p>
@@ -59,7 +59,7 @@
 
   <script src="config.js?v=1"></script>
   <script src="demo.js?v=1"></script>
-  <script src="app.js?v=2"></script>
+  <script src="app.js?v=3"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </body>
 </html>

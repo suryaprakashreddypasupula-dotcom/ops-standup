@@ -14,7 +14,11 @@
 
   const CFG = window.OPS_STANDUP_CONFIG || {};
   const SHEETS_API = "https://sheets.googleapis.com/v4/spreadsheets";
-  const SCOPES = "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.email";
+  const SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive.metadata.readonly",
+    "https://www.googleapis.com/auth/userinfo.email",
+  ].join(" ");
   const LS_SHEET = "ops-standup:lastSheet";
   const LS_HINT = "ops-standup:loginHint";
 
@@ -119,15 +123,19 @@
           state.token = null;
           return reject(new Error("Google signed you in without Sheets access. Add the spreadsheets scope under Data Access, then sign in again."));
         }
+        if (granted && !granted.includes("https://www.googleapis.com/auth/drive.metadata.readonly")) {
+          state.token = null;
+          return reject(new Error("Google signed you in without Drive access. Under Data Access, add https://www.googleapis.com/auth/drive.metadata.readonly and sign in again."));
+        }
         state.token = resp.access_token;
         state.tokenExp = Date.now() + (Number(resp.expires_in || 3600) - 60) * 1000;
         resolve(state.token);
       };
       state.tokenClient.error_callback = (e) => reject(new Error(e && e.message ? e.message : "Sign-in was closed"));
-      // Always show consent so a token issued before the Sheets scope was
-      // added is not reused.
+      // Empty prompt re-prompts only when a new scope (Drive) has not been
+      // granted yet. Returning visitors are not asked every morning.
       const login_hint = localStorage.getItem(LS_HINT) || undefined;
-      state.tokenClient.requestAccessToken({ prompt: "consent", login_hint });
+      state.tokenClient.requestAccessToken({ prompt: "", login_hint });
     });
   }
 
@@ -446,14 +454,18 @@
     const err = $("gate-error"); err.hidden = true;
     const btn = $("signin"); btn.disabled = true; btn.textContent = "Signing in…";
     try {
-      await requestToken(true);
+      if (state.token && Date.now() < state.tokenExp) await ensureToken();
+      else await requestToken(true);
       await loadUser();
+      if (!sheetId) {
+        btn.textContent = "Finding the latest pack…";
+        sheetId = await latestStandupId();
+      }
       btn.textContent = "Loading Sheet…";
       state.sheetId = sheetId;
       await loadSheet(sheetId);
       if (!state.demo) {
-        localStorage.setItem(LS_SHEET, sheetId);
-        const u = new URL(location.href); u.searchParams.set("sheet", sheetId); history.replaceState(null, "", u);
+        // Do not remember the id. The next visit must resolve the newest pack.
         const link = $("sheet-link"); link.href = `https://docs.google.com/spreadsheets/d/${sheetId}`; link.hidden = false;
       }
 
@@ -469,22 +481,33 @@
     }
   }
 
+  async function latestStandupId() {
+    const q = "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false and name contains 'Ops Standup'";
+    const url = "https://www.googleapis.com/drive/v3/files?pageSize=20&orderBy=createdTime desc"
+      + "&fields=files(id,name,createdTime)&supportsAllDrives=true&includeItemsFromAllDrives=true"
+      + "&q=" + encodeURIComponent(q);
+    const data = await api(url);
+    const files = (data.files || []).filter((f) => /Ops Standup/i.test(f.name || "") && !/Priority|Hanger/i.test(f.name || ""));
+    files.sort((a, b) => String(b.createdTime || "").localeCompare(String(a.createdTime || "")));
+    if (!files.length) throw new Error("No Ops Standup Sheet is shared with this Google account yet.");
+    return files[0].id;
+  }
+
   function init() {
     const params = new URLSearchParams(location.search);
     // ?demo=1 renders synthetic sample data (demo.js) with no Google sign-in,
     // so the layout can be reviewed before the OAuth client exists.
     state.demo = params.get("demo") === "1" && !!window.OPS_STANDUP_DEMO;
-    const fromUrl = parseSheetId(params.get("sheet"));
-    const remembered = localStorage.getItem(LS_SHEET) || "";
-    const initial = state.demo ? "demo" : (fromUrl || remembered || CFG.DEFAULT_SHEET_ID || "");
-    $("sheet-input").value = initial;
+    // Drop any Sheet id saved by an older version of this page.
+    localStorage.removeItem(LS_SHEET);
+    $("sheet-input").value = "";
     if (!CFG.GOOGLE_CLIENT_ID && !state.demo) $("config-hint").hidden = false;
     if (state.demo) { $("signin").textContent = "Open demo data"; $("sheet-input").disabled = true; }
 
     $("signin").onclick = () => {
-      const id = state.demo ? "demo" : parseSheetId($("sheet-input").value);
-      if (!id) { const e = $("gate-error"); e.textContent = "Paste the Ops Standup Sheet link (or its id) first."; e.hidden = false; return; }
-      start(id);
+      if (state.demo) { start("demo"); return; }
+      const typed = parseSheetId($("sheet-input").value);
+      start(typed || "");
     };
     $("sheet-input").addEventListener("keydown", (e) => { if (e.key === "Enter") $("signin").click(); });
     $("signout").onclick = signOut;
