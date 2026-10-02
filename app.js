@@ -357,6 +357,10 @@
     return kept(state.notes.filter((n) => n.page === "summary" && n.level === "po" && n.po_number === po &&
       n.bucket === row.timeframe && n.factory === row.factory && n.status === row.metric));
   }
+  function notesForPerson(station, who) {
+    const email = String(who || "").toLowerCase();
+    return kept(state.notes.filter((n) => n.page === "people" && n.level === "person" && n.station_group === station && String(n.status || "").toLowerCase() === email));
+  }
 
   function noteEditor(onSave, onCancel, placeholder, initial, allowEmpty) {
     const box = el(`<div class="note-editor">
@@ -902,14 +906,13 @@
       const row = block.querySelector(".profile-row");
       station.people.forEach((person) => {
         const qty = person.days[person.days.length - 1].qty;
-        const name = displayName(person.who);
         const btn = el(`<button type="button" class="profile"></button>`);
         if (!qty) btn.classList.add("zero");
-        btn.setAttribute("aria-label", name + ", rank " + person.rank + " at " + station.label + ", " + qty + " insoles");
+        btn.setAttribute("aria-label", "Rank " + person.rank + " at " + station.label + ", " + qty + " insoles");
         btn.appendChild(el(`<span class="rank">${person.rank}</span>`));
-        btn.appendChild(el(`<span class="who">${esc(name)}</span>`));
         btn.appendChild(el(`<span class="score">${qty}</span>`));
         btn.appendChild(el(`<span class="unit">insoles</span>`));
+        if (notesForPerson(station.station, person.who).length) btn.appendChild(el(`<span class="badge">note</span>`));
         btn.onclick = () => {
           state.personFocus = { station: station.station, who: person.who.toLowerCase() };
           renderPeople();
@@ -922,10 +925,9 @@
   }
 
   function renderPersonDetail(host, board, station, person) {
-    const name = displayName(person.who);
     const qty = person.days[person.days.length - 1].qty;
     const dir = directionLine(person.days);
-    host.appendChild(el(`<div class="page-head"><h2>${esc(name)}</h2><span class="legend">${esc(station.label)} · ${qty} insoles on ${esc(board.day)}</span></div>`));
+    host.appendChild(el(`<div class="page-head"><h2>${esc(station.label)}</h2><span class="legend">Rank ${person.rank} · ${qty} insoles on ${esc(board.day)}</span></div>`));
     const back = el(`<button type="button" class="btn back-board">Back to scoreboard</button>`);
     back.onclick = () => { state.personFocus = null; renderPeople(); };
     host.appendChild(back);
@@ -933,6 +935,28 @@
     const chart = el(`<div class="chart-card"><div class="chart-title">Insoles by day</div><div class="chart-scroll"></div></div>`);
     chart.querySelector(".chart-scroll").appendChild(trendChart(person.days));
     host.appendChild(chart);
+
+    const noteCard = el(`<div class="chart-card person-note"><div class="chart-title">Note</div><div class="po-notes"></div><div class="po-actions"></div></div>`);
+    const notesEl = noteCard.querySelector(".po-notes");
+    const act = noteCard.querySelector(".po-actions");
+    const placeholder = `Note for rank ${person.rank} at ${station.label}`;
+    const paint = () => {
+      const ns = notesForPerson(station.station, person.who);
+      if (ns.length) fillNotes(notesEl, ns, paint, placeholder);
+      else notesEl.innerHTML = `<span class="muted">No note yet.</span>`;
+      act.innerHTML = "";
+      const add = el(`<button type="button" class="linklike">${ns.length ? "Add another note" : "Add note"}</button>`);
+      add.onclick = () => {
+        showNoteEditor(act, "", placeholder, paint, async (text) => {
+          await appendNote({ page: "people", level: "person", station_group: station.station, status: person.who, note: text });
+          toast("Note saved");
+          paint();
+        }, false);
+      };
+      act.appendChild(add);
+    };
+    paint();
+    host.appendChild(noteCard);
   }
 
   // ───────────────────────── shell ─────────────────────────
