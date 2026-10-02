@@ -925,21 +925,22 @@
   }
 
   function renderPersonDetail(host, board, station, person) {
+    const name = displayName(person.who);
     const qty = person.days[person.days.length - 1].qty;
     const dir = directionLine(person.days);
-    host.appendChild(el(`<div class="page-head"><h2>${esc(station.label)}</h2><span class="legend">Rank ${person.rank} · ${qty} insoles on ${esc(board.day)}</span></div>`));
+    host.appendChild(el(`<div class="page-head"><h2>${esc(name)}</h2><span class="legend">${esc(station.label)} · rank ${person.rank} · ${qty} insoles on ${esc(board.day)}</span></div>`));
     const back = el(`<button type="button" class="btn back-board">Back to scoreboard</button>`);
     back.onclick = () => { state.personFocus = null; renderPeople(); };
     host.appendChild(back);
     if (dir) host.appendChild(el(`<p class="direction direction-${dir.kind}">${esc(dir.text)}</p>`));
-    const chart = el(`<div class="chart-card"><div class="chart-title">Insoles by day</div><div class="chart-scroll"></div></div>`);
+    const chart = el(`<div class="chart-card"><div class="chart-title">${esc(name)} · insoles by day</div><div class="chart-scroll"></div></div>`);
     chart.querySelector(".chart-scroll").appendChild(trendChart(person.days));
     host.appendChild(chart);
 
-    const noteCard = el(`<div class="chart-card person-note"><div class="chart-title">Note</div><div class="po-notes"></div><div class="po-actions"></div></div>`);
+    const noteCard = el(`<div class="chart-card person-note"><div class="chart-title">Note on ${esc(name)}</div><div class="po-notes"></div><div class="po-actions"></div></div>`);
     const notesEl = noteCard.querySelector(".po-notes");
     const act = noteCard.querySelector(".po-actions");
-    const placeholder = `Note for rank ${person.rank} at ${station.label}`;
+    const placeholder = `Note for ${name} at ${station.label}`;
     const paint = () => {
       const ns = notesForPerson(station.station, person.who);
       if (ns.length) fillNotes(notesEl, ns, paint, placeholder);
