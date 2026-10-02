@@ -78,7 +78,9 @@
     const rows = [];
     for (let i = 1; i < values.length; i++) {
       const r = values[i]; if (!r || r.every((v) => v === "" || v == null)) continue;
-      const o = {}; cols.forEach((c, j) => { o[c] = r[j] == null ? "" : r[j]; }); rows.push(o);
+      const o = {}; cols.forEach((c, j) => { o[c] = r[j] == null ? "" : r[j]; });
+      o._row = i + 1;
+      rows.push(o);
     }
     return { cols: cols.filter((c) => c), rows };
   }
@@ -301,60 +303,122 @@
       factory: n.factory || "", station_group: n.station_group || "", status: n.status || "",
       bucket: n.bucket || "", po_number: n.po_number || "", note: n.note,
     };
-    await api(`${SHEETS_API}/${state.sheetId}/values/${encodeURIComponent(quoteTab(NOTES_TAB) + "!A:J")}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, {
+    const res = await api(`${SHEETS_API}/${state.sheetId}/values/${encodeURIComponent(quoteTab(NOTES_TAB) + "!A:J")}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ values: [NOTES_HEADER.map((k) => rec[k])] }),
     });
+    const range = (res.updates && res.updates.updatedRange) || "";
+    const rowMatch = String(range).match(/![A-Z]+(\d+)/i);
+    rec._row = rowMatch ? Number(rowMatch[1]) : "";
     state.notes.push(rec);
     return rec;
+  }
+
+  async function updateNote(note, text) {
+    const row = Number(note._row);
+    if (!row) throw new Error("Reload the page, then edit this note.");
+    const rec = {
+      ts: text ? new Date().toISOString() : (note.ts || ""),
+      user: text ? (state.user || note.user || "") : (note.user || ""),
+      page: note.page, level: note.level,
+      factory: note.factory || "", station_group: note.station_group || "", status: note.status || "",
+      bucket: note.bucket || "", po_number: note.po_number || "", note: text,
+    };
+    await api(`${SHEETS_API}/${state.sheetId}/values/${encodeURIComponent(quoteTab(NOTES_TAB) + "!A" + row + ":J" + row)}?valueInputOption=RAW`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ values: [NOTES_HEADER.map((k) => rec[k])] }),
+    });
+    Object.assign(note, rec);
   }
 
   // ───────────────────────── notes lookups ─────────────────────────
   const stationKey = (r) => [r.factory, r.station_group, r.status].join("|");
   const summaryKey = (r) => [r.timeframe, r.factory, r.category, r.metric].join("|");
 
+  function kept(notes) { return notes.filter((n) => String(n.note || "").trim()); }
   function notesForStation(row) {
     const k = stationKey(row);
-    return state.notes.filter((n) => n.page === "delinquency" && n.level === "station" && stationKey(n) === k);
+    return kept(state.notes.filter((n) => n.page === "delinquency" && n.level === "station" && stationKey(n) === k));
   }
   function notesForPo(row, po) {
     const k = stationKey(row);
-    return state.notes.filter((n) => n.page === "delinquency" && n.level === "po" && stationKey(n) === k && n.po_number === po);
+    return kept(state.notes.filter((n) => n.page === "delinquency" && n.level === "po" && stationKey(n) === k && n.po_number === po));
   }
   function poNotesInCell(row, col) {
     const k = stationKey(row);
-    return state.notes.filter((n) => n.page === "delinquency" && n.level === "po" && stationKey(n) === k && n.bucket === col);
+    return kept(state.notes.filter((n) => n.page === "delinquency" && n.level === "po" && stationKey(n) === k && n.bucket === col));
   }
   function notesForMetric(row) {
     const k = summaryKey(row);
-    return state.notes.filter((n) => n.page === "summary" && n.level === "metric" &&
-      [n.bucket, n.factory, n.station_group, n.status].join("|") === k);
+    return kept(state.notes.filter((n) => n.page === "summary" && n.level === "metric" &&
+      [n.bucket, n.factory, n.station_group, n.status].join("|") === k));
   }
   function notesForSummaryPo(row, po) {
-    return state.notes.filter((n) => n.page === "summary" && n.level === "po" && n.po_number === po &&
-      n.bucket === row.timeframe && n.factory === row.factory && n.status === row.metric);
+    return kept(state.notes.filter((n) => n.page === "summary" && n.level === "po" && n.po_number === po &&
+      n.bucket === row.timeframe && n.factory === row.factory && n.status === row.metric));
   }
 
-  function renderNoteList(notes) {
-    if (!notes.length) return "";
-    return notes.map((n) => `<div class="note-entry">${esc(n.note).replace(/\n/g, "<br>")} <span class="who">— ${esc(shortUser(n.user))}, ${esc(fmtTs(n.ts))}</span></div>`).join("");
-  }
-
-  function noteEditor(onSave, onCancel, placeholder) {
+  function noteEditor(onSave, onCancel, placeholder, initial, allowEmpty) {
     const box = el(`<div class="note-editor">
       <textarea placeholder="${esc(placeholder || "Write a note…")}"></textarea>
-      <div class="row"><button class="btn ghost cancel">Cancel</button><button class="btn primary save">Save</button></div>
+      <div class="row"><button type="button" class="btn ghost cancel">Cancel</button><button type="button" class="btn primary save">Save</button></div>
     </div>`);
     const ta = box.querySelector("textarea");
-    box.querySelector(".cancel").onclick = onCancel;
-    box.querySelector(".save").onclick = async () => {
-      const text = ta.value.trim(); if (!text) return;
+    ta.value = initial || "";
+    box.addEventListener("click", (e) => e.stopPropagation());
+    box.querySelector(".cancel").onclick = (e) => { e.stopPropagation(); onCancel(); };
+    box.querySelector(".save").onclick = async (e) => {
+      e.stopPropagation();
+      const text = ta.value.trim();
+      if (!text && !allowEmpty) return;
       box.querySelector(".save").disabled = true;
-      try { await onSave(text); } catch (e) { toast("Could not save: " + e.message, true); box.querySelector(".save").disabled = false; }
+      box.querySelector(".cancel").disabled = true;
+      try { await onSave(text); } catch (e) {
+        toast("Could not save: " + e.message, true);
+        box.querySelector(".save").disabled = false;
+        box.querySelector(".cancel").disabled = false;
+      }
     };
-    ta.addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") box.querySelector(".save").click(); });
-    setTimeout(() => ta.focus(), 0);
+    ta.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") { e.stopPropagation(); onCancel(); }
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") box.querySelector(".save").click();
+    });
+    setTimeout(() => { ta.focus(); if (initial) ta.setSelectionRange(ta.value.length, ta.value.length); }, 0);
     return box;
+  }
+
+  function showNoteEditor(host, initial, placeholder, paint, onSave, allowEmpty) {
+    host.innerHTML = "";
+    host.classList.remove("empty");
+    host.appendChild(noteEditor(onSave, paint, placeholder, initial, allowEmpty));
+  }
+
+  function fillNotes(host, notes, paint, placeholder) {
+    host.innerHTML = "";
+    notes.forEach((n) => {
+      const entry = el(`<div class="note-entry"></div>`);
+      const text = document.createElement("span");
+      text.innerHTML = esc(n.note).replace(/\n/g, "<br>");
+      const who = el(`<span class="who"> — ${esc(shortUser(n.user))}, ${esc(fmtTs(n.ts))}</span>`);
+      const edit = el(`<button type="button" class="linklike">Edit</button>`);
+      const remove = el(`<button type="button" class="linklike">Remove</button>`);
+      edit.onclick = (e) => {
+        e.stopPropagation();
+        showNoteEditor(host, n.note, placeholder, paint, async (text) => {
+          await updateNote(n, text);
+          toast(text ? "Note saved" : "Note removed");
+          paint();
+        }, true);
+      };
+      remove.onclick = async (e) => {
+        e.stopPropagation();
+        remove.disabled = true;
+        try { await updateNote(n, ""); toast("Note removed"); paint(); }
+        catch (err) { toast("Could not remove: " + err.message, true); remove.disabled = false; }
+      };
+      entry.append(text, who, edit, remove);
+      host.appendChild(entry);
+    });
   }
 
   // ───────────────────────── page 1: Ops Summary ─────────────────────────
@@ -362,7 +426,7 @@
     const host = $("page-summary"); host.innerHTML = "";
     if (!state.summary.length) { host.appendChild(el(`<div class="empty">No Ops Summary tab in this Sheet.</div>`)); return; }
     const cols = state.summaryCols.filter((c) => c.toLowerCase() !== "notes");
-    host.appendChild(el(`<div class="page-head"><h2>${esc(findTab("Ops Summary"))}</h2><span class="legend">Click a Notes cell to add a note on that metric.</span></div>`));
+    host.appendChild(el(`<div class="page-head"><h2>${esc(findTab("Ops Summary"))}</h2><span class="legend">Click a Notes cell to add a note. Edit or Remove changes it.</span></div>`));
     const wrap = el(`<div class="grid-wrap"></div>`);
     const table = el(`<table class="grid"><thead><tr>${cols.map((c) => `<th>${esc(c)}</th>`).join("")}<th>Notes</th></tr></thead><tbody></tbody></table>`);
     const tb = table.querySelector("tbody");
@@ -386,15 +450,15 @@
         tr.appendChild(td);
       });
       const noteTd = document.createElement("td"); noteTd.className = "notecell";
-      const paint = () => { const ns = notesForMetric(r); noteTd.innerHTML = renderNoteList(ns); noteTd.classList.toggle("empty", !ns.length); };
+      const placeholder = `Why is ${r.metric} at ${r.value}?`;
+      const paint = () => { fillNotes(noteTd, notesForMetric(r), paint, placeholder); noteTd.classList.toggle("empty", !notesForMetric(r).length); };
       paint();
       noteTd.onclick = (e) => {
-        if (noteTd.querySelector(".note-editor")) return;
-        const editor = noteEditor(async (text) => {
+        if (e.target.closest(".note-editor, .linklike, .note-entry")) return;
+        showNoteEditor(noteTd, "", placeholder, paint, async (text) => {
           await appendNote({ page: "summary", level: "metric", bucket: r.timeframe, factory: r.factory, station_group: r.category, status: r.metric, note: text });
           toast("Note saved"); paint();
-        }, () => paint(), `Why is ${r.metric} at ${r.value}?`);
-        noteTd.classList.remove("empty"); noteTd.appendChild(editor);
+        }, false);
       };
       tr.appendChild(noteTd);
       tb.appendChild(tr);
@@ -445,15 +509,15 @@
         tr.appendChild(td);
       });
       const noteTd = document.createElement("td"); noteTd.className = "notecell";
-      const paint = () => { const ns = notesForStation(r); noteTd.innerHTML = renderNoteList(ns); noteTd.classList.toggle("empty", !ns.length); };
+      const placeholder = `Note for ${r.factory} · ${r.status}`;
+      const paint = () => { fillNotes(noteTd, notesForStation(r), paint, placeholder); noteTd.classList.toggle("empty", !notesForStation(r).length); };
       paint();
-      noteTd.onclick = () => {
-        if (noteTd.querySelector(".note-editor")) return;
-        const editor = noteEditor(async (text) => {
+      noteTd.onclick = (e) => {
+        if (e.target.closest(".note-editor, .linklike, .note-entry")) return;
+        showNoteEditor(noteTd, "", placeholder, paint, async (text) => {
           await appendNote({ page: "delinquency", level: "station", factory: r.factory, station_group: r.station_group, status: r.status, note: text });
           toast("Note saved"); paint();
-        }, () => paint(), `Note for ${r.factory} · ${r.status}`);
-        noteTd.classList.remove("empty"); noteTd.appendChild(editor);
+        }, false);
       };
       tr.appendChild(noteTd);
       tb.appendChild(tr);
@@ -473,15 +537,18 @@
     // Row-level note
     const stationBox = el(`<div class="po-card"><div class="section-title" style="margin-top:0">Note on this row</div><div class="po-notes"></div><div class="po-actions"></div></div>`);
     const paintStation = () => {
-      stationBox.querySelector(".po-notes").innerHTML = renderNoteList(notesForStation(row)) || `<span class="muted">No note yet.</span>`;
+      const notesEl = stationBox.querySelector(".po-notes");
+      const ns = notesForStation(row);
+      const placeholder = `What is going on in ${row.status}?`;
+      if (ns.length) fillNotes(notesEl, ns, () => { paintStation(); renderDelinquency(); }, placeholder);
+      else notesEl.innerHTML = `<span class="muted">No note yet.</span>`;
       const act = stationBox.querySelector(".po-actions"); act.innerHTML = "";
-      const b = el(`<button class="linklike">Add note</button>`);
+      const b = el(`<button type="button" class="linklike">Add note</button>`);
       b.onclick = () => {
-        act.innerHTML = "";
-        act.appendChild(noteEditor(async (text) => {
+        showNoteEditor(act, "", placeholder, paintStation, async (text) => {
           await appendNote({ page: "delinquency", level: "station", factory: row.factory, station_group: row.station_group, status: row.status, bucket: col, note: text });
           toast("Note saved"); paintStation(); renderDelinquency();
-        }, paintStation, `What is going on in ${row.status}?`));
+        }, false);
       };
       act.appendChild(b);
     };
@@ -513,15 +580,17 @@
       const notesDiv = el(`<div class="po-notes"></div>`); const act = el(`<div class="po-actions"></div>`);
       const paint = () => {
         const ns = notesForPo(row, d.po_number);
-        notesDiv.innerHTML = renderNoteList(ns); card.classList.toggle("noted", ns.length > 0);
+        const placeholder = `Why is ${d.po_number} here?`;
+        if (ns.length) fillNotes(notesDiv, ns, () => { paint(); renderDelinquency(); }, placeholder);
+        else notesDiv.innerHTML = "";
+        card.classList.toggle("noted", ns.length > 0);
         act.innerHTML = "";
-        const b = el(`<button class="linklike">${ns.length ? "Add another note" : "Add note"}</button>`);
+        const b = el(`<button type="button" class="linklike">${ns.length ? "Add another note" : "Add note"}</button>`);
         b.onclick = () => {
-          act.innerHTML = "";
-          act.appendChild(noteEditor(async (text) => {
+          showNoteEditor(act, "", placeholder, paint, async (text) => {
             await appendNote({ page: "delinquency", level: "po", factory: row.factory, station_group: row.station_group, status: row.status, bucket: col, po_number: d.po_number, note: text });
             toast("Note saved"); paint(); renderDelinquency();
-          }, paint, `Why is ${d.po_number} here?`));
+          }, false);
         };
         act.appendChild(b);
       };
@@ -545,15 +614,18 @@
 
     const metricBox = el(`<div class="po-card"><div class="section-title" style="margin-top:0">Note on this number</div><div class="po-notes"></div><div class="po-actions"></div></div>`);
     const paintMetric = () => {
-      metricBox.querySelector(".po-notes").innerHTML = renderNoteList(notesForMetric(row)) || `<span class="muted">No note yet.</span>`;
+      const notesEl = metricBox.querySelector(".po-notes");
+      const ns = notesForMetric(row);
+      const placeholder = `Why is ${row.metric} at ${row.value}?`;
+      if (ns.length) fillNotes(notesEl, ns, () => { paintMetric(); renderSummary(); }, placeholder);
+      else notesEl.innerHTML = `<span class="muted">No note yet.</span>`;
       const act = metricBox.querySelector(".po-actions"); act.innerHTML = "";
-      const b = el(`<button class="linklike">Add note</button>`);
+      const b = el(`<button type="button" class="linklike">Add note</button>`);
       b.onclick = () => {
-        act.innerHTML = "";
-        act.appendChild(noteEditor(async (text) => {
+        showNoteEditor(act, "", placeholder, paintMetric, async (text) => {
           await appendNote({ page: "summary", level: "metric", bucket: row.timeframe, factory: row.factory, station_group: row.category, status: row.metric, note: text });
           toast("Note saved"); paintMetric(); renderSummary();
-        }, paintMetric, `Why is ${row.metric} at ${row.value}?`));
+        }, false);
       };
       act.appendChild(b);
     };
@@ -570,15 +642,17 @@
       const notesDiv = el(`<div class="po-notes"></div>`); const act = el(`<div class="po-actions"></div>`);
       const paint = () => {
         const ns = notesForSummaryPo(row, d.po_number);
-        notesDiv.innerHTML = renderNoteList(ns); card.classList.toggle("noted", ns.length > 0);
+        const placeholder = `Why is ${d.po_number} in ${row.metric}?`;
+        if (ns.length) fillNotes(notesDiv, ns, paint, placeholder);
+        else notesDiv.innerHTML = "";
+        card.classList.toggle("noted", ns.length > 0);
         act.innerHTML = "";
-        const b = el(`<button class="linklike">${ns.length ? "Add another note" : "Add note"}</button>`);
+        const b = el(`<button type="button" class="linklike">${ns.length ? "Add another note" : "Add note"}</button>`);
         b.onclick = () => {
-          act.innerHTML = "";
-          act.appendChild(noteEditor(async (text) => {
+          showNoteEditor(act, "", placeholder, paint, async (text) => {
             await appendNote({ page: "summary", level: "po", bucket: row.timeframe, factory: row.factory, station_group: row.category, status: row.metric, po_number: d.po_number, note: text });
             toast("Note saved"); paint();
-          }, paint, `Why is ${d.po_number} in ${row.metric}?`));
+          }, false);
         };
         act.appendChild(b);
       };

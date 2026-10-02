@@ -102,6 +102,7 @@ table.grid tr.factory-start td { border-top: 2px solid var(--border); }
 
 .note-entry { padding: 2px 0; }
 .note-entry .who { color: var(--muted); font-size: 11px; }
+.note-entry .linklike { margin-left: 8px; font-size: 12px; }
 .note-editor { display: flex; flex-direction: column; gap: 6px; }
 .note-editor textarea {
   font: inherit; width: 100%; min-height: 64px; padding: 6px 8px; border: 1px solid var(--border);

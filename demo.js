@@ -117,10 +117,18 @@
         return { valueRanges: ranges.map((t) => ({ range: `'${t}'!A1:Z`, values: TABS[t] || [] })) };
       }
       if (url.includes(":append")) {
-        const body = JSON.parse(opts.body); TABS.Notes.push(body.values[0]); return { updates: { updatedRows: 1 } };
+        const body = JSON.parse(opts.body); TABS.Notes.push(body.values[0]);
+        const row = TABS.Notes.length;
+        return { updates: { updatedRows: 1, updatedRange: `Notes!A${row}:J${row}` } };
       }
       if (url.includes(":batchUpdate")) return { replies: [{}] };
-      if (opts && opts.method === "PUT") return {};
+      if (opts && opts.method === "PUT") {
+        const body = opts.body ? JSON.parse(opts.body) : null;
+        const decoded = decodeURIComponent(url);
+        const m = decoded.match(/Notes'!A(\d+)/i) || decoded.match(/!A(\d+)/);
+        if (body && body.values && m) TABS.Notes[Number(m[1]) - 1] = body.values[0];
+        return {};
+      }
       throw new Error("demo: unhandled " + url);
     },
   };
