@@ -24,6 +24,7 @@
       ["Last 2d", "SOLEMATE", "Quality", "Overall Reject Rate", 9.11],
       ["Last 2d", "SOLEMATE", "Volume", "Orders Placed", 388],
       ["Last 7d", "SOLEFORGE", "OTD", "Printing Compliance %", 88.0],
+      ["Last 7d", "SOLEMATE", "OTD", "OTS 1d Late", 1],
       ["Last 7d", "SOLEMATE", "OTD", "Printing Compliance %", 74.9],
     ],
     [`${P} Delinquency by Station`]: [
@@ -40,6 +41,17 @@
       ["Unassigned", "On Hold", "On Hold External", 2, 0, 2, 0, 0, 0, 0, 0, 0],
     ],
     [`${P} Delinquency Detail`]: [["factory", "station_group", "status", "bucket_kind", "event_date", "po_number", "workbench_id", "order_id", "company_name", "customer_overdue", "classification", "days_past_step_due", "rework_category", "go_live", "step_start", "step_due_date"]],
+    [`${P} OTS Report`]: [
+      ["timeframe (based on completion date)", "factory", "rework_type", "ship_classification", "po_number", "company_name", "bd_over_sla", "workbench_id"],
+      ["Last 2d", "SOLEMATE", "Reprint x2", "1BD_LATE", "demo-late-1", "Sample Clinic A", "1", "wb-demo-late-1"],
+      ["Last 2d", "SOLEMATE", "", "1BD_LATE", "demo-late-2", "Sample Clinic B", "1", "wb-demo-late-2"],
+      ["Last 7d", "SOLEMATE", "", "1BD_LATE", "demo-should-not-open", "Sample Clinic A", "1", "wb-no"],
+    ],
+    [`${P} TAT Report`]: [
+      ["timeframe", "factory", "workstation", "sla_status", "current_status", "po_number", "days_over", "company_name", "workbench_id"],
+      ["Last 2d", "SOLEFORGE", "Printing", "MISSED", "COMPLETED", "demo-print-1", "1", "Sample Clinic A", "wb-demo-print-1"],
+      ["Last 2d", "SOLEFORGE", "Printing", "MET", "COMPLETED", "demo-print-ok", "0", "Sample Clinic B", "wb-demo-print-ok"],
+    ],
     Notes: [["ts", "user", "page", "level", "factory", "station_group", "status", "bucket", "po_number", "note"],
       [new Date(Date.now() - 36e5).toISOString(), "sample.user@example.com", "delinquency", "station", "SOLEFORGE", "Production", "NEEDS_FINISHING", "", "", "Two people out; second shift caught up most of it."],
       [new Date(Date.now() - 30e5).toISOString(), "sample.user@example.com", "delinquency", "po", "SOLEMATE", "Printing", "PRINTING — Not Queued", "Step overdue", "demo-300101", "Design file failure, resent to print this morning."],
@@ -87,7 +99,7 @@
         return { properties: { title: `${P} Ops Standup (demo)` }, sheets: Object.keys(TABS).map((t) => ({ properties: { title: t } })) };
       }
       if (url.includes("/values:batchGet")) {
-        const ranges = [...new URL(url).searchParams.getAll("ranges")].map(unq);
+        const ranges = [...new URL(url).searchParams.getAll("ranges")].map((t) => unq(t.split("!")[0]));
         return { valueRanges: ranges.map((t) => ({ range: `'${t}'!A1:Z`, values: TABS[t] || [] })) };
       }
       if (url.includes(":append")) {

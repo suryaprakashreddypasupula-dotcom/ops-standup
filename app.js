@@ -48,6 +48,7 @@
     summary: [], summaryCols: [],
     delinquency: [], delinquencyCols: [],
     detail: [], notes: [],
+    orders: [],
     page: "summary",
   };
 
@@ -183,9 +184,18 @@
     const tDel = findTab("Delinquency by Station");
     const tDetail = findTab("Delinquency Detail");
     const tNotes = findTab(NOTES_TAB);
+    const tOts = findTab("OTS Report");
+    const tTat = findTab("TAT Report");
     if (!tSummary && !tDel) throw new Error(`This Sheet has no "Ops Summary" or "Delinquency by Station" tab. Is it the Ops Standup Sheet?`);
 
-    const ranges = [tSummary, tDel, tDetail, tNotes].filter(Boolean).map((t) => "ranges=" + encodeURIComponent(quoteTab(t)));
+    // OTS and TAT are limited to the columns the click-through reads, so the
+    // page does not download shoe size, clinician, and the rest of those tabs.
+    const rangeOf = (tab, cols) => cols ? `${quoteTab(tab)}!${cols}` : quoteTab(tab);
+    const wanted = [
+      [tSummary, null], [tDel, null], [tDetail, null], [tNotes, null],
+      [tOts, "A:Q"], [tTat, "A:H"],
+    ].filter((pair) => pair[0]);
+    const ranges = wanted.map(([tab, cols]) => "ranges=" + encodeURIComponent(rangeOf(tab, cols)));
     const data = await api(`${SHEETS_API}/${sheetId}/values:batchGet?${ranges.join("&")}&valueRenderOption=FORMATTED_VALUE`);
     const byTab = {};
     (data.valueRanges || []).forEach((vr) => {
@@ -197,8 +207,71 @@
     const d = toObjects(byTab[tDel] || []); state.delinquency = d.rows; state.delinquencyCols = d.cols;
     state.detail = toObjects(byTab[tDetail] || []).rows;
     state.notes = tNotes ? toObjects(byTab[tNotes] || []).rows.filter((n) => n.note) : [];
+    state.orders = ordersBehindSummary(toObjects(byTab[tOts] || []).rows, toObjects(byTab[tTat] || []).rows);
     state.hasDetail = !!tDetail;
     state.hasNotes = !!tNotes;
+  }
+
+  // Ops Summary value → the orders already listed on OTS Report / TAT Report.
+  // Only Last 2d opens. Last 7d / 14d / 30d stay plain numbers. Count cells
+  // (OTS On Time, 1d Late, …) are that ship class. A compliance percent opens
+  // the orders that missed that station. Quality rates have no order tab on
+  // this Sheet, so those numbers stay as they are. The pack build is not
+  // changed by this page.
+  function isLast2d(tf) {
+    const s = String(tf || "").trim().toLowerCase();
+    return s === "last 2d" || s === "last 2bd";
+  }
+  const OTS_CLASS = {
+    "ON_TIME": "OTS On Time",
+    "1BD_EARLY": "OTS 1d Early",
+    "2BD+_EARLY": "OTS 2d+ Early",
+    "1BD_LATE": "OTS 1d Late",
+    "2BD+_LATE": "OTS 2d+ Late",
+  };
+  const TAT_STATION = {
+    "Design": "Design Compliance %",
+    "Printing": "Printing Compliance %",
+    "Production": "Production Compliance %",
+    "Shipping": "Shipping Compliance %",
+    "Overall": "Overall Compliance %",
+  };
+  const COUNT_METRICS = new Set(Object.values(OTS_CLASS));
+
+  function ordersBehindSummary(otsRows, tatRows) {
+    const out = [];
+    otsRows.forEach((r) => {
+      const metric = OTS_CLASS[String(r.ship_classification || "").trim()];
+      const tf = r["timeframe (based on completion date)"] || r.timeframe || "";
+      if (!metric || !r.po_number || !isLast2d(tf)) return;
+      const bits = [];
+      if (r.bd_over_sla !== "" && r.bd_over_sla != null) bits.push(`${r.bd_over_sla} BD vs SLA`);
+      if (r.rework_type) bits.push(r.rework_type);
+      out.push({
+        timeframe: tf, factory: r.factory || "", metric, po_number: r.po_number,
+        workbench_id: r.workbench_id || "", company_name: r.company_name || "",
+        detail: bits.join(" · "),
+      });
+    });
+    tatRows.forEach((r) => {
+      if (String(r.sla_status || "").toUpperCase() !== "MISSED") return;
+      const metric = TAT_STATION[String(r.workstation || "").trim()];
+      if (!metric || !r.po_number || !isLast2d(r.timeframe)) return;
+      const bits = [];
+      if (r.days_over !== "" && r.days_over != null) bits.push(`missed by ${r.days_over} BD`);
+      if (r.current_status) bits.push(r.current_status);
+      out.push({
+        timeframe: r.timeframe || "", factory: r.factory || "", metric, po_number: r.po_number,
+        workbench_id: r.workbench_id || "", company_name: r.company_name || "",
+        detail: bits.join(" · "),
+      });
+    });
+    return out;
+  }
+
+  function ordersForMetric(row) {
+    if (!isLast2d(row.timeframe)) return [];
+    return state.orders.filter((d) => d.timeframe === row.timeframe && d.factory === row.factory && d.metric === row.metric);
   }
 
   async function ensureNotesTab() {
@@ -250,6 +323,10 @@
     return state.notes.filter((n) => n.page === "summary" && n.level === "metric" &&
       [n.bucket, n.factory, n.station_group, n.status].join("|") === k);
   }
+  function notesForSummaryPo(row, po) {
+    return state.notes.filter((n) => n.page === "summary" && n.level === "po" && n.po_number === po &&
+      n.bucket === row.timeframe && n.factory === row.factory && n.status === row.metric);
+  }
 
   function renderNoteList(notes) {
     if (!notes.length) return "";
@@ -289,7 +366,15 @@
       lastFactory = r.factory;
       cols.forEach((c) => {
         const td = document.createElement("td"); const v = r[c];
-        if (c === "value" && num(v) !== null) { td.className = "num"; td.textContent = v; }
+        if (c === "value" && num(v) !== null) {
+          td.className = "num"; td.textContent = v;
+          const list = ordersForMetric(r);
+          if (list.length && num(v) !== 0) {
+            td.classList.add("drill");
+            td.title = "Show the orders behind this number";
+            td.onclick = () => openSummaryDrawer(r, list);
+          }
+        }
         else { td.textContent = v; if (c === "metric") td.className = "text"; }
         tr.appendChild(td);
       });
@@ -440,6 +525,63 @@
 
     $("drawer").hidden = false; $("scrim").hidden = false;
   }
+  function openSummaryDrawer(row, list) {
+    const gridN = num(row.value);
+    const countMetric = COUNT_METRICS.has(row.metric);
+    $("drawer-title").textContent = `${row.factory} · ${row.metric}`;
+    let sub = `${row.timeframe}: ${list.length} order${list.length === 1 ? "" : "s"}`;
+    if (countMetric && gridN !== null && gridN !== list.length) {
+      sub += ` (the cell shows ${gridN})`;
+    }
+    $("drawer-sub").textContent = sub;
+    const body = $("drawer-body"); body.innerHTML = "";
+
+    const metricBox = el(`<div class="po-card"><div class="section-title" style="margin-top:0">Note on this number</div><div class="po-notes"></div><div class="po-actions"></div></div>`);
+    const paintMetric = () => {
+      metricBox.querySelector(".po-notes").innerHTML = renderNoteList(notesForMetric(row)) || `<span class="muted">No note yet.</span>`;
+      const act = metricBox.querySelector(".po-actions"); act.innerHTML = "";
+      const b = el(`<button class="linklike">Add note</button>`);
+      b.onclick = () => {
+        act.innerHTML = "";
+        act.appendChild(noteEditor(async (text) => {
+          await appendNote({ page: "summary", level: "metric", bucket: row.timeframe, factory: row.factory, station_group: row.category, status: row.metric, note: text });
+          toast("Note saved"); paintMetric(); renderSummary();
+        }, paintMetric, `Why is ${row.metric} at ${row.value}?`));
+      };
+      act.appendChild(b);
+    };
+    paintMetric();
+    body.appendChild(metricBox);
+    body.appendChild(el(`<div class="section-title">Orders</div>`));
+
+    list.forEach((d) => {
+      const card = el(`<div class="po-card"></div>`);
+      const wbUrl = d.workbench_id ? `${CFG.WORKBENCH_BASE}/${encodeURIComponent(d.workbench_id)}` : "";
+      const poHtml = wbUrl ? `<a href="${wbUrl}" target="_blank" rel="noopener">${esc(d.po_number)}</a>` : `<b>${esc(d.po_number)}</b>`;
+      card.appendChild(el(`<div class="po-head">${poHtml}${d.detail ? ` <span class="pill">${esc(d.detail)}</span>` : ""}</div>`));
+      if (d.company_name) card.appendChild(el(`<div class="po-meta"><b>${esc(d.company_name)}</b></div>`));
+      const notesDiv = el(`<div class="po-notes"></div>`); const act = el(`<div class="po-actions"></div>`);
+      const paint = () => {
+        const ns = notesForSummaryPo(row, d.po_number);
+        notesDiv.innerHTML = renderNoteList(ns); card.classList.toggle("noted", ns.length > 0);
+        act.innerHTML = "";
+        const b = el(`<button class="linklike">${ns.length ? "Add another note" : "Add note"}</button>`);
+        b.onclick = () => {
+          act.innerHTML = "";
+          act.appendChild(noteEditor(async (text) => {
+            await appendNote({ page: "summary", level: "po", bucket: row.timeframe, factory: row.factory, station_group: row.category, status: row.metric, po_number: d.po_number, note: text });
+            toast("Note saved"); paint();
+          }, paint, `Why is ${d.po_number} in ${row.metric}?`));
+        };
+        act.appendChild(b);
+      };
+      paint();
+      card.appendChild(notesDiv); card.appendChild(act);
+      body.appendChild(card);
+    });
+    $("drawer").hidden = false; $("scrim").hidden = false;
+  }
+
   function closeDrawer() { $("drawer").hidden = true; $("scrim").hidden = true; }
 
   // ───────────────────────── shell ─────────────────────────

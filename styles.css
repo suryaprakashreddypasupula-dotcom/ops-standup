@@ -86,6 +86,8 @@ table.grid tr:hover td { background: var(--hover); }
 table.grid td.num { text-align: right; font-variant-numeric: tabular-nums; }
 table.grid td.clickable { color: var(--link); cursor: pointer; font-weight: 600; }
 table.grid td.clickable:hover { text-decoration: underline; }
+table.grid td.drill { cursor: pointer; }
+table.grid td.drill:hover { text-decoration: underline; }
 table.grid td.zero { color: #9aa3af; }
 table.grid td.text { white-space: normal; min-width: 160px; }
 table.grid td.notecell { white-space: normal; min-width: 260px; max-width: 420px; cursor: text; background: var(--note-bg); }
