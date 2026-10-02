@@ -482,7 +482,8 @@
   function renderDelinquency() {
     const host = $("page-delinquency"); host.innerHTML = "";
     if (!state.delinquency.length) { host.appendChild(el(`<div class="empty">No Delinquency by Station tab in this Sheet.</div>`)); return; }
-    const cols = state.delinquencyCols.filter((c) => c.toLowerCase() !== "notes");
+    const hiddenCols = new Set(["completed_yesterday", "completed_2_days_ago", "rejected_yesterday", "rejected_2_days_ago"]);
+    const cols = state.delinquencyCols.filter((c) => c.toLowerCase() !== "notes" && !hiddenCols.has(c));
     const legend = state.hasDetail ? "Click any number to see the POs behind it." : "This Sheet has no Delinquency Detail tab, so numbers cannot be opened.";
     host.appendChild(el(`<div class="page-head"><h2>${esc(findTab("Delinquency by Station"))}</h2><span class="legend">${legend}</span></div>`));
     const wrap = el(`<div class="grid-wrap"></div>`);
