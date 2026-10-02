@@ -617,7 +617,9 @@
   }
 
   function displayName(who) {
-    const local = String(who || "").split("@")[0].replace(/[._]+/g, " ").trim();
+    let local = String(who || "").split("@")[0].trim();
+    if (local.includes("+")) local = local.split("+").pop();
+    local = local.replace(/[._]+/g, " ").trim();
     if (!local) return "Unknown";
     return local.replace(/\b[a-z]/g, (c) => c.toUpperCase());
   }
@@ -679,7 +681,7 @@
       });
     });
     const stations = stationOrder.map((station) => {
-      const people = [...grouped.values()].filter((p) => p.station === station && p.days[p.days.length - 1].qty > 0);
+      const people = [...grouped.values()].filter((p) => p.station === station && p.days.some((d) => d.qty > 0));
       people.sort((a, b) => b.days[b.days.length - 1].qty - a.days[a.days.length - 1].qty || displayName(a.who).localeCompare(displayName(b.who)));
       people.forEach((p, i) => { p.rank = i + 1; });
       return { station: station, label: stationLabel(station), people: people };
@@ -759,7 +761,7 @@
       return;
     }
     if (!board.stations.length) {
-      host.appendChild(el(`<div class="empty">No one completed an insole on ${esc(board.day)}.</div>`));
+      host.appendChild(el(`<div class="empty">No insole counts on the Prev Day by Person tab.</div>`));
       return;
     }
     if (state.personFocus) {
@@ -768,7 +770,7 @@
       if (station && person) { renderPersonDetail(host, board, station, person); return; }
       state.personFocus = null;
     }
-    host.appendChild(el(`<div class="page-head"><h2>Prev Day by Person</h2><span class="legend">Ranked by insoles on ${esc(board.day)}.</span></div>`));
+    host.appendChild(el(`<div class="page-head"><h2>Prev Day by Person</h2><span class="legend">Everyone on the sheet, ranked by insoles on ${esc(board.day)}. A 0 means none that day.</span></div>`));
     board.stations.forEach((station) => {
       const block = el(`<section class="station-board"><h3>${esc(station.label)}</h3><div class="profile-row"></div></section>`);
       const row = block.querySelector(".profile-row");
@@ -776,6 +778,7 @@
         const qty = person.days[person.days.length - 1].qty;
         const name = displayName(person.who);
         const btn = el(`<button type="button" class="profile"></button>`);
+        if (!qty) btn.classList.add("zero");
         btn.setAttribute("aria-label", name + ", rank " + person.rank + " at " + station.label + ", " + qty + " insoles");
         btn.appendChild(el(`<span class="rank">${person.rank}</span>`));
         btn.appendChild(el(`<span class="who">${esc(name)}</span>`));
