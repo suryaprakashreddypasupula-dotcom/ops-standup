@@ -657,10 +657,61 @@
 
   function dateLabel(col) { return String(col).replace(/^\*/, ""); }
 
+  function monthDay(col) {
+    const m = String(col || "").trim().match(/^\*?(\d{1,2})\/(\d{1,2})$/);
+    return m ? { month: Number(m[1]), day: Number(m[2]) } : null;
+  }
+
+  // The file name is the morning the pack is read. 10_2 means the previous
+  // day on this page is 10/1. Columns on the report date itself are not used.
+  function reportMonthDay() {
+    const src = state.title || findTab("Prev Day by Person") || "";
+    const m = String(src).match(/(\d{1,2})_(\d{1,2})/);
+    return m ? { month: Number(m[1]), day: Number(m[2]) } : null;
+  }
+
+  function chicagoYear(reportMonth) {
+    const parts = new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", year: "numeric", month: "numeric" }).formatToParts(new Date());
+    const year = Number(parts.find((p) => p.type === "year").value);
+    const month = Number(parts.find((p) => p.type === "month").value);
+    if (reportMonth === 12 && month === 1) return year - 1;
+    if (reportMonth === 1 && month === 12) return year + 1;
+    return year;
+  }
+
+  function dayKey(md, report) {
+    let month = md.month;
+    if (report.month <= 2 && md.month >= 11) month -= 12;
+    if (report.month >= 11 && md.month <= 2) month += 12;
+    return month * 40 + md.day;
+  }
+
+  function previousDayColumns(dates) {
+    const report = reportMonthDay();
+    if (!report) return dates;
+    const year = chicagoYear(report.month);
+    const prevDate = new Date(Date.UTC(year, report.month - 1, report.day));
+    prevDate.setUTCDate(prevDate.getUTCDate() - 1);
+    const prev = { month: prevDate.getUTCMonth() + 1, day: prevDate.getUTCDate() };
+    let score = dates.findIndex((col) => {
+      const md = monthDay(col);
+      return md && md.month === prev.month && md.day === prev.day;
+    });
+    if (score < 0) {
+      const reportKey = dayKey(report, report);
+      dates.forEach((col, i) => {
+        const md = monthDay(col);
+        if (md && dayKey(md, report) < reportKey) score = i;
+      });
+    }
+    if (score < 0) return dates;
+    return dates.slice(0, score + 1);
+  }
+
   function peopleBoards() {
-    const dates = dateColumns(state.byPersonCols);
+    const dates = previousDayColumns(dateColumns(state.byPersonCols));
     if (!dates.length || !state.byPerson.length) return { dates: dates, day: "", stations: [] };
-    const latest = dates[dates.length - 1];
+    const day = dates[dates.length - 1];
     const grouped = new Map();
     const stationOrder = [];
     state.byPerson.forEach((row) => {
@@ -686,7 +737,7 @@
       people.forEach((p, i) => { p.rank = i + 1; });
       return { station: station, label: stationLabel(station), people: people };
     }).filter((s) => s.people.length);
-    return { dates: dates, day: dateLabel(latest), stations: stations };
+    return { dates: dates, day: dateLabel(day), stations: stations };
   }
 
   function svgEl(name, attrs) {
@@ -770,7 +821,7 @@
       if (station && person) { renderPersonDetail(host, board, station, person); return; }
       state.personFocus = null;
     }
-    host.appendChild(el(`<div class="page-head"><h2>Prev Day by Person</h2><span class="legend">Everyone on the sheet, ranked by insoles on ${esc(board.day)}. A 0 means none that day.</span></div>`));
+    host.appendChild(el(`<div class="page-head"><h2>Prev Day by Person</h2><span class="legend">Ranked by insoles on ${esc(board.day)}.</span></div>`));
     board.stations.forEach((station) => {
       const block = el(`<section class="station-board"><h3>${esc(station.label)}</h3><div class="profile-row"></div></section>`);
       const row = block.querySelector(".profile-row");
