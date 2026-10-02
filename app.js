@@ -49,6 +49,8 @@
     delinquency: [], delinquencyCols: [],
     detail: [], notes: [],
     orders: [],
+    byPerson: [], byPersonCols: [],
+    personFocus: null,
     page: "summary",
   };
 
@@ -186,6 +188,7 @@
     const tNotes = findTab(NOTES_TAB);
     const tOts = findTab("OTS Report");
     const tTat = findTab("TAT Report");
+    const tPerson = findTab("Prev Day by Person");
     if (!tSummary && !tDel) throw new Error(`This Sheet has no "Ops Summary" or "Delinquency by Station" tab. Is it the Ops Standup Sheet?`);
 
     // OTS and TAT are limited to the columns the click-through reads, so the
@@ -193,7 +196,7 @@
     const rangeOf = (tab, cols) => cols ? `${quoteTab(tab)}!${cols}` : quoteTab(tab);
     const wanted = [
       [tSummary, null], [tDel, null], [tDetail, null], [tNotes, null],
-      [tOts, "A:Q"], [tTat, "A:H"],
+      [tOts, "A:Q"], [tTat, "A:H"], [tPerson, null],
     ].filter((pair) => pair[0]);
     const ranges = wanted.map(([tab, cols]) => "ranges=" + encodeURIComponent(rangeOf(tab, cols)));
     const data = await api(`${SHEETS_API}/${sheetId}/values:batchGet?${ranges.join("&")}&valueRenderOption=FORMATTED_VALUE`);
@@ -208,6 +211,10 @@
     state.detail = toObjects(byTab[tDetail] || []).rows;
     state.notes = tNotes ? toObjects(byTab[tNotes] || []).rows.filter((n) => n.note) : [];
     state.orders = ordersBehindSummary(toObjects(byTab[tOts] || []).rows, toObjects(byTab[tTat] || []).rows);
+    const person = toObjects(byTab[tPerson] || []);
+    state.byPerson = person.rows;
+    state.byPersonCols = person.cols;
+    state.personFocus = null;
     state.hasDetail = !!tDetail;
     state.hasNotes = !!tNotes;
   }
@@ -584,12 +591,228 @@
 
   function closeDrawer() { $("drawer").hidden = true; $("scrim").hidden = true; }
 
+  // ───────────────────────── page 3: Prev Day by Person ─────────────────────────
+  // Scoreboard only. Reads the Prev Day by Person tab already on the Sheet.
+  // No orders, notes, or workbench. Ops Summary and Delinquency are not used here.
+  const STATION_LABELS = {
+    "PRINTING": "Printing",
+    "NEEDS_MANUFACTURING": "Manufacturing",
+    "NEEDS_GRINDING": "Grinding",
+    "POST_PRINT_QA": "Post-print QA",
+    "NEEDS_GLUING": "Gluing",
+    "NEEDS_FINISHING": "Finishing",
+    "NEEDS_QUALITY_CONTROL": "Quality Control",
+    "NEEDS_ADDON": "Add-on",
+    "NEEDS_SHIPPING": "Shipping",
+    "NEEDS_MATCHING": "Matching",
+    "AWAITING_SHIPMENT": "Awaiting Shipment",
+  };
+
+  function stationLabel(raw) {
+    const key = String(raw || "").trim();
+    if (STATION_LABELS[key]) return STATION_LABELS[key];
+    const cleaned = key.replace(/^NEEDS_/, "").replace(/_/g, " ").toLowerCase();
+    if (!cleaned) return "Station";
+    return cleaned.replace(/\b[a-z]/g, (c) => c.toUpperCase());
+  }
+
+  function displayName(who) {
+    const local = String(who || "").split("@")[0].replace(/[._]+/g, " ").trim();
+    if (!local) return "Unknown";
+    return local.replace(/\b[a-z]/g, (c) => c.toUpperCase());
+  }
+
+  function parseHm(label) {
+    const s = String(label || "");
+    let mins = 0;
+    const h = s.match(/(\d+)\s*h/i);
+    const m = s.match(/(\d+)\s*m/i);
+    if (h) mins += Number(h[1]) * 60;
+    if (m) mins += Number(m[1]);
+    return mins;
+  }
+
+  function formatHm(mins) {
+    mins = Math.round(mins || 0);
+    if (mins <= 0) return "";
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    if (!h) return m + "m";
+    return h + "h " + m + "m";
+  }
+
+  function parseThroughput(v) {
+    const s = String(v == null ? "" : v).trim();
+    if (!s) return { qty: 0, minutes: 0 };
+    const m = s.match(/^(-?\d+(?:\.\d+)?)(?:\s*\(([^)]*)\))?/);
+    if (!m) return { qty: 0, minutes: 0 };
+    return { qty: Math.round(Number(m[1])), minutes: parseHm(m[2] || "") };
+  }
+
+  function dateColumns(cols) {
+    return (cols || []).filter((c) => /^\*?\d{1,2}\/\d{1,2}$/.test(String(c).trim()));
+  }
+
+  function dateLabel(col) { return String(col).replace(/^\*/, ""); }
+
+  function peopleBoards() {
+    const dates = dateColumns(state.byPersonCols);
+    if (!dates.length || !state.byPerson.length) return { dates: dates, day: "", stations: [] };
+    const latest = dates[dates.length - 1];
+    const grouped = new Map();
+    const stationOrder = [];
+    state.byPerson.forEach((row) => {
+      const station = String(row.station || "").trim();
+      const who = String(row.completed_by || "").trim();
+      if (!station || !who) return;
+      const key = station + "\n" + who.toLowerCase();
+      let person = grouped.get(key);
+      if (!person) {
+        person = { station: station, who: who, days: dates.map((col) => ({ col: col, label: dateLabel(col), qty: 0, minutes: 0 })) };
+        grouped.set(key, person);
+        if (!stationOrder.includes(station)) stationOrder.push(station);
+      }
+      dates.forEach((col, i) => {
+        const cell = parseThroughput(row[col]);
+        person.days[i].qty += cell.qty;
+        person.days[i].minutes += cell.minutes;
+      });
+    });
+    const stations = stationOrder.map((station) => {
+      const people = [...grouped.values()].filter((p) => p.station === station && p.days[p.days.length - 1].qty > 0);
+      people.sort((a, b) => b.days[b.days.length - 1].qty - a.days[a.days.length - 1].qty || displayName(a.who).localeCompare(displayName(b.who)));
+      people.forEach((p, i) => { p.rank = i + 1; });
+      return { station: station, label: stationLabel(station), people: people };
+    }).filter((s) => s.people.length);
+    return { dates: dates, day: dateLabel(latest), stations: stations };
+  }
+
+  function svgEl(name, attrs) {
+    const node = document.createElementNS("http://www.w3.org/2000/svg", name);
+    Object.entries(attrs).forEach(([k, v]) => node.setAttribute(k, String(v)));
+    return node;
+  }
+
+  function trendChart(days) {
+    const max = Math.max.apply(null, days.map((d) => d.qty).concat([1]));
+    const barW = 46;
+    const gap = 26;
+    const plotH = 200;
+    const top = 40;
+    const bottom = 52;
+    const left = 12;
+    const width = left + days.length * (barW + gap);
+    const height = top + plotH + bottom;
+    const svg = svgEl("svg", { class: "trend", viewBox: "0 0 " + width + " " + height, width: width, height: height, role: "img" });
+    svg.appendChild(svgEl("title", {})).textContent = "Insoles by day";
+    const baseline = top + plotH;
+    svg.appendChild(svgEl("line", { x1: left, y1: baseline, x2: width - 8, y2: baseline, class: "trend-base" }));
+    const points = days.map((d, i) => {
+      const h = Math.round((d.qty / max) * (plotH - 8));
+      const x = left + i * (barW + gap);
+      const y = baseline - h;
+      return { d: d, x: x, y: y, h: h, cx: x + barW / 2 };
+    });
+    points.forEach((p, i) => {
+      const prev = i > 0 ? points[i - 1].d.qty : null;
+      const dir = prev == null ? "flat" : p.d.qty > prev ? "up" : p.d.qty < prev ? "down" : "flat";
+      svg.appendChild(svgEl("rect", { x: p.x, y: p.y, width: barW, height: Math.max(p.h, p.d.qty ? 2 : 0), rx: 4, class: "bar bar-" + dir }));
+      const count = svgEl("text", { x: p.cx, y: Math.max(18, p.y - 16), class: "bar-count", "text-anchor": "middle", stroke: "#fff", "stroke-width": "4", "paint-order": "stroke" });
+      count.textContent = String(p.d.qty);
+      svg.appendChild(count);
+      const date = svgEl("text", { x: p.cx, y: baseline + 18, class: "bar-date", "text-anchor": "middle" });
+      date.textContent = p.d.label;
+      svg.appendChild(date);
+      const timeLabel = formatHm(p.d.minutes);
+      if (timeLabel) {
+        const time = svgEl("text", { x: p.cx, y: baseline + 34, class: "bar-time", "text-anchor": "middle" });
+        time.textContent = timeLabel;
+        svg.appendChild(time);
+      }
+    });
+    for (let i = 1; i < points.length; i++) {
+      const up = points[i].d.qty > points[i - 1].d.qty;
+      svg.appendChild(svgEl("line", {
+        x1: points[i - 1].cx, y1: points[i - 1].y, x2: points[i].cx, y2: points[i].y,
+        class: up ? "trend-up" : "trend-flat",
+      }));
+    }
+    return svg;
+  }
+
+  function directionLine(days) {
+    if (days.length < 2) return null;
+    const last = days[days.length - 1];
+    const prev = days[days.length - 2];
+    const delta = last.qty - prev.qty;
+    if (delta > 0) return { kind: "up", text: "Picked up " + delta + " insoles" };
+    if (delta < 0) return { kind: "down", text: "Dropped " + (-delta) + " insoles" };
+    return { kind: "flat", text: "Flat vs " + prev.label };
+  }
+
+  function renderPeople() {
+    const host = $("page-people");
+    host.innerHTML = "";
+    const board = peopleBoards();
+    if (!state.byPerson.length || !board.dates.length) {
+      host.appendChild(el(`<div class="empty">This Sheet has no Prev Day by Person tab.</div>`));
+      return;
+    }
+    if (!board.stations.length) {
+      host.appendChild(el(`<div class="empty">No one completed an insole on ${esc(board.day)}.</div>`));
+      return;
+    }
+    if (state.personFocus) {
+      const station = board.stations.find((s) => s.station === state.personFocus.station);
+      const person = station && station.people.find((p) => p.who.toLowerCase() === state.personFocus.who);
+      if (station && person) { renderPersonDetail(host, board, station, person); return; }
+      state.personFocus = null;
+    }
+    host.appendChild(el(`<div class="page-head"><h2>Prev Day by Person</h2><span class="legend">Ranked by insoles on ${esc(board.day)}.</span></div>`));
+    board.stations.forEach((station) => {
+      const block = el(`<section class="station-board"><h3>${esc(station.label)}</h3><div class="profile-row"></div></section>`);
+      const row = block.querySelector(".profile-row");
+      station.people.forEach((person) => {
+        const qty = person.days[person.days.length - 1].qty;
+        const name = displayName(person.who);
+        const btn = el(`<button type="button" class="profile"></button>`);
+        btn.setAttribute("aria-label", name + ", rank " + person.rank + " at " + station.label + ", " + qty + " insoles");
+        btn.appendChild(el(`<span class="rank">${person.rank}</span>`));
+        btn.appendChild(el(`<span class="who">${esc(name)}</span>`));
+        btn.appendChild(el(`<span class="score">${qty}</span>`));
+        btn.appendChild(el(`<span class="unit">insoles</span>`));
+        btn.onclick = () => {
+          state.personFocus = { station: station.station, who: person.who.toLowerCase() };
+          renderPeople();
+          window.scrollTo(0, 0);
+        };
+        row.appendChild(btn);
+      });
+      host.appendChild(block);
+    });
+  }
+
+  function renderPersonDetail(host, board, station, person) {
+    const name = displayName(person.who);
+    const qty = person.days[person.days.length - 1].qty;
+    const dir = directionLine(person.days);
+    host.appendChild(el(`<div class="page-head"><h2>${esc(name)}</h2><span class="legend">${esc(station.label)} · ${qty} insoles on ${esc(board.day)}</span></div>`));
+    const back = el(`<button type="button" class="btn back-board">Back to scoreboard</button>`);
+    back.onclick = () => { state.personFocus = null; renderPeople(); };
+    host.appendChild(back);
+    if (dir) host.appendChild(el(`<p class="direction direction-${dir.kind}">${esc(dir.text)}</p>`));
+    const chart = el(`<div class="chart-card"><div class="chart-title">Insoles by day</div><div class="chart-scroll"></div></div>`);
+    chart.querySelector(".chart-scroll").appendChild(trendChart(person.days));
+    host.appendChild(chart);
+  }
+
   // ───────────────────────── shell ─────────────────────────
   function showPage(p) {
     state.page = p;
     document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b.dataset.page === p));
     $("page-summary").hidden = p !== "summary";
     $("page-delinquency").hidden = p !== "delinquency";
+    $("page-people").hidden = p !== "people";
   }
 
   async function start(sheetId) {
@@ -614,7 +837,7 @@
       $("gate").hidden = true; $("tabs").hidden = false;
       $("pack-title").textContent = state.title;
       $("user").textContent = state.user; $("signout").hidden = false;
-      renderSummary(); renderDelinquency();
+      renderSummary(); renderDelinquency(); renderPeople();
       showPage(state.delinquency.length && !state.summary.length ? "delinquency" : "summary");
     } catch (e) {
       err.textContent = e.message; err.hidden = false;
