@@ -906,10 +906,12 @@
       const row = block.querySelector(".profile-row");
       station.people.forEach((person) => {
         const qty = person.days[person.days.length - 1].qty;
+        const name = displayName(person.who);
         const btn = el(`<button type="button" class="profile"></button>`);
         if (!qty) btn.classList.add("zero");
-        btn.setAttribute("aria-label", "Rank " + person.rank + " at " + station.label + ", " + qty + " insoles");
+        btn.setAttribute("aria-label", name + ", rank " + person.rank + " at " + station.label + ", " + qty + " insoles");
         btn.appendChild(el(`<span class="rank">${person.rank}</span>`));
+        btn.appendChild(el(`<span class="who">${esc(name)}</span>`));
         btn.appendChild(el(`<span class="score">${qty}</span>`));
         btn.appendChild(el(`<span class="unit">insoles</span>`));
         if (notesForPerson(station.station, person.who).length) btn.appendChild(el(`<span class="badge">note</span>`));
