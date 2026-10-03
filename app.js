@@ -51,6 +51,8 @@
     orders: [],
     byPerson: [], byPersonCols: [],
     personFocus: null,
+    holds: [], holdCols: [],
+    holdSort: { col: "", dir: 1 },
     page: "summary",
   };
 
@@ -191,6 +193,7 @@
     const tOts = findTab("OTS Report");
     const tTat = findTab("TAT Report");
     const tPerson = findTab("Prev Day by Person");
+    const tHolds = findTab("On Hold External Detail");
     if (!tSummary && !tDel) throw new Error(`This Sheet has no "Ops Summary" or "Delinquency by Station" tab. Is it the Ops Standup Sheet?`);
 
     // OTS and TAT are limited to the columns the click-through reads, so the
@@ -198,7 +201,7 @@
     const rangeOf = (tab, cols) => cols ? `${quoteTab(tab)}!${cols}` : quoteTab(tab);
     const wanted = [
       [tSummary, null], [tDel, null], [tDetail, null], [tNotes, null],
-      [tOts, "A:Q"], [tTat, "A:H"], [tPerson, null],
+      [tOts, "A:Q"], [tTat, "A:H"], [tPerson, null], [tHolds, null],
     ].filter((pair) => pair[0]);
     const ranges = wanted.map(([tab, cols]) => "ranges=" + encodeURIComponent(rangeOf(tab, cols)));
     const data = await api(`${SHEETS_API}/${sheetId}/values:batchGet?${ranges.join("&")}&valueRenderOption=FORMATTED_VALUE`);
@@ -217,6 +220,10 @@
     state.byPerson = person.rows;
     state.byPersonCols = person.cols;
     state.personFocus = null;
+    const holds = toObjects(byTab[tHolds] || []);
+    state.holds = holds.rows;
+    state.holdCols = holds.cols;
+    state.holdSort = { col: "", dir: 1 };
     state.hasDetail = !!tDetail;
     state.hasNotes = !!tNotes;
   }
@@ -962,6 +969,113 @@
     host.appendChild(noteCard);
   }
 
+  // ───────────────────────── page 4: On Hold External Detail ─────────────────────────
+  // Same columns as the nightly "{date} On Hold External Detail" tab.
+  // Manual holds stay above every other Hold Kind. A column heading sorts
+  // inside those two blocks; click it again to reverse. No sort menu.
+  function isManualHold(row) {
+    return String(row["Hold Kind"] || "").trim().toLowerCase() === "manual";
+  }
+  function columnIsNumeric(col, rows) {
+    if (col === "Days On Hold") return true;
+    const vals = rows.map((r) => String(r[col] == null ? "" : r[col]).trim()).filter(Boolean);
+    return vals.length > 0 && vals.every((v) => num(v) !== null);
+  }
+  function cellSortKey(v, numeric) {
+    const s = String(v == null ? "" : v).trim();
+    if (!s) return null;
+    if (numeric) return num(s);
+    if (/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(s) || /^\d{4}-\d{2}-\d{2}/.test(s)) {
+      const t = Date.parse(s);
+      if (!isNaN(t)) return t;
+    }
+    return s.toLowerCase();
+  }
+  function compareHoldCells(a, b, col, numeric, dir) {
+    const ka = cellSortKey(a[col], numeric);
+    const kb = cellSortKey(b[col], numeric);
+    if (ka == null && kb == null) return 0;
+    if (ka == null) return 1;
+    if (kb == null) return -1;
+    const c = typeof ka === "number" && typeof kb === "number"
+      ? ka - kb
+      : String(ka).localeCompare(String(kb), undefined, { numeric: true, sensitivity: "base" });
+    return c * dir;
+  }
+  function orderedHolds() {
+    const rows = state.holds.map((r, i) => ({ r, i }));
+    const col = state.holdSort.col;
+    const dir = state.holdSort.dir || 1;
+    const numeric = col ? columnIsNumeric(col, state.holds) : false;
+    rows.sort((a, b) => {
+      const group = (isManualHold(a.r) ? 0 : 1) - (isManualHold(b.r) ? 0 : 1);
+      if (group) return group;
+      if (!col) return a.i - b.i;
+      return compareHoldCells(a.r, b.r, col, numeric, dir) || (a.i - b.i);
+    });
+    return rows.map((x) => x.r);
+  }
+  function renderHolds() {
+    const host = $("page-holds");
+    if (!host) return;
+    host.innerHTML = "";
+    if (!state.holdCols.length) {
+      host.appendChild(el(`<div class="empty">No On Hold External Detail tab in this Sheet.</div>`));
+      return;
+    }
+    const rows = orderedHolds();
+    const manual = rows.filter(isManualHold).length;
+    const rest = rows.length - manual;
+    host.appendChild(el(
+      `<div class="page-head"><h2>${esc(findTab("On Hold External Detail") || "On Hold External Detail")}</h2>`
+      + `<span class="legend">${manual} manual on top · ${rest} below. Click a column heading to sort. Click it again to reverse.</span></div>`
+    ));
+    const wrap = el(`<div class="grid-wrap"></div>`);
+    const table = document.createElement("table");
+    table.className = "grid";
+    const thead = document.createElement("thead");
+    const hr = document.createElement("tr");
+    state.holdCols.forEach((c) => {
+      const th = document.createElement("th");
+      th.className = "colhead";
+      th.scope = "col";
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "colhead-btn";
+      const label = document.createElement("span");
+      label.textContent = c;
+      const mark = document.createElement("span");
+      mark.className = "mark";
+      mark.textContent = state.holdSort.col === c ? (state.holdSort.dir < 0 ? "▼" : "▲") : "";
+      btn.append(label, mark);
+      btn.onclick = () => {
+        if (state.holdSort.col === c) state.holdSort.dir = -state.holdSort.dir;
+        else state.holdSort = { col: c, dir: 1 };
+        renderHolds();
+      };
+      th.appendChild(btn);
+      hr.appendChild(th);
+    });
+    thead.appendChild(hr);
+    const tb = document.createElement("tbody");
+    let seenRest = false;
+    rows.forEach((r) => {
+      const tr = document.createElement("tr");
+      if (!isManualHold(r) && !seenRest) { tr.classList.add("hold-rest"); seenRest = true; }
+      state.holdCols.forEach((c) => {
+        const td = document.createElement("td");
+        const v = r[c];
+        if (columnIsNumeric(c, state.holds) && num(v) !== null) { td.className = "num"; td.textContent = v; }
+        else td.textContent = v == null ? "" : v;
+        tr.appendChild(td);
+      });
+      tb.appendChild(tr);
+    });
+    table.append(thead, tb);
+    wrap.appendChild(table);
+    host.appendChild(wrap);
+  }
+
   // ───────────────────────── shell ─────────────────────────
   function showPage(p) {
     state.page = p;
@@ -969,6 +1083,7 @@
     $("page-summary").hidden = p !== "summary";
     $("page-delinquency").hidden = p !== "delinquency";
     $("page-people").hidden = p !== "people";
+    $("page-holds").hidden = p !== "holds";
   }
 
   async function start(sheetId) {
@@ -993,7 +1108,7 @@
       $("gate").hidden = true; $("tabs").hidden = false;
       $("pack-title").textContent = state.title;
       $("user").textContent = state.user; $("signout").hidden = false;
-      renderSummary(); renderDelinquency(); renderPeople();
+      renderSummary(); renderDelinquency(); renderPeople(); renderHolds();
       showPage(state.delinquency.length && !state.summary.length ? "delinquency" : "summary");
     } catch (e) {
       err.textContent = e.message; err.hidden = false;

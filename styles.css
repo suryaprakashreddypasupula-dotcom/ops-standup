@@ -187,3 +187,24 @@ table.grid tr.factory-start td { border-top: 2px solid var(--border); }
 .bar-count { font-size: 12px; font-weight: 700; fill: var(--text); font-family: inherit; }
 .bar-date { font-size: 11px; fill: var(--text); font-family: inherit; }
 .bar-time { font-size: 10px; fill: var(--muted); font-family: inherit; }
+
+/* On Hold External only. Other pages keep the grid they already have. */
+#page-holds {
+  display: flex; flex-direction: column; min-height: 0;
+  height: calc(100vh - 52px);
+  margin: -14px -16px -40px; padding: 14px 16px 12px;
+}
+#page-holds .grid-wrap { flex: 1; min-height: 0; overflow: auto; }
+#page-holds table.grid { min-width: 1680px; }
+#page-holds th.colhead { padding: 0; white-space: nowrap; }
+#page-holds button.colhead-btn {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  width: 100%; margin: 0; padding: 5px 8px; border: 0; background: transparent;
+  font: inherit; font-weight: 700; color: inherit; text-align: left; cursor: pointer;
+}
+#page-holds th.colhead:hover { background: #c5d4ee; }
+#page-holds th.colhead .mark {
+  display: inline-block; width: 12px; margin-left: 4px;
+  font-size: 10px; color: var(--accent); font-weight: 700;
+}
+#page-holds tr.hold-rest td { border-top: 2px solid var(--border); }

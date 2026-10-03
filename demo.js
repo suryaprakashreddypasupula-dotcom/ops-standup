@@ -61,6 +61,14 @@
       ["Form", "Production", "NEEDS_FINISHING", "quinn.brooks@example.com", 225, "8 (28m)", "10 (32m)", "9 (30m)", "11 (34m)", "12 (36m)", "10 (32m)", "14 (40m)", "12 (36m)", "4 (10m)", 86, 10.8, 3.1],
       ["Ship", "Shipping", "NEEDS_SHIPPING", "devon.shaw@example.com", 225, "", "", 4, 6, 8, 5, 10, 15, 99, 48, 6, ""],
     ],
+    [`${P} On Hold External Detail`]: [
+      ["Factory", "PO Number", "Patient", "Language Preference", "Clinician", "Clinician Email", "Clinician Phone", "Company", "Held From", "Hold Kind", "Hold Reason", "Hold Placed On", "Days On Hold", "step_overdue_at", "authorization_date", "Placed By", "Placed By Email"],
+      ["SOLEMATE", "demo-hold-1", "Demo Patient A", "English", "Casey Nguyen", "casey.nguyen@example.com", "555-0101", "Sample Clinic A", "NEEDS_GLUING", "Auth Flip", "", "9/12/2026", 14, "", "9/2/2026", "", ""],
+      ["SOLEFORGE", "demo-hold-2", "Demo Patient B", "Spanish", "Jordan Lee", "jordan.lee@example.com", "555-0102", "Sample Clinic B", "NEEDS_FINISHING", "Manual", "Waiting on clinic photos", "9/28/2026", 3, "", "9/20/2026", "Sam Patel", "sam.patel@example.com"],
+      ["SOLEFORGE", "demo-hold-3", "Demo Patient C", "English", "Riley Chen", "riley.chen@example.com", "555-0103", "Demo Orthotics", "NEEDS_SHIPPING", "Manual", "Other: clinic asked to pause", "9/20/2026", 9, "", "9/10/2026", "Alex Rivera", "alex.rivera@example.com"],
+      ["SOLEMATE", "demo-hold-4", "Demo Patient D", "English", "Quinn Brooks", "quinn.brooks@example.com", "555-0104", "Example Foot Care", "DRAFT", "Auth Flip", "", "9/1/2026", 22, "", "8/28/2026", "", ""],
+      ["SOLEFORGE", "demo-hold-5", "Demo Patient E", "Spanish", "Morgan Diaz", "morgan.diaz@example.com", "555-0105", "Sample Clinic A", "NEEDS_MANUFACTURING", "Manual", "Scan unreadable", "9/26/2026", 5, "", "9/18/2026", "Jordan Lee", "jordan.lee@example.com"],
+    ],
     [`${P} TAT Report`]: [
       ["timeframe", "factory", "workstation", "sla_status", "current_status", "po_number", "days_over", "company_name", "workbench_id"],
       ["Last 2d", "SOLEFORGE", "Printing", "MISSED", "COMPLETED", "demo-print-1", "1", "Sample Clinic A", "wb-demo-print-1"],
