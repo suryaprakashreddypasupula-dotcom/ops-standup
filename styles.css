@@ -194,17 +194,51 @@ table.grid tr.factory-start td { border-top: 2px solid var(--border); }
   height: calc(100vh - 52px);
   margin: -14px -16px -40px; padding: 14px 16px 12px;
 }
+#page-holds .page-head { flex-wrap: wrap; }
+#page-holds .page-head .linklike { margin-left: auto; }
 #page-holds .grid-wrap { flex: 1; min-height: 0; overflow: auto; }
-#page-holds table.grid { min-width: 1680px; }
-#page-holds th.colhead { padding: 0; white-space: nowrap; }
+#page-holds table.grid {
+  min-width: 0; width: max-content; table-layout: fixed;
+  --hold-row: 28px;
+}
+#page-holds th.colhead {
+  position: sticky; top: 0; padding: 0; white-space: nowrap; overflow: visible;
+}
+#page-holds th.colhead .grip {
+  float: left; padding: 5px 2px 5px 6px; cursor: grab; color: var(--muted);
+  font-size: 11px; letter-spacing: -1px; user-select: none;
+}
 #page-holds button.colhead-btn {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  width: 100%; margin: 0; padding: 5px 8px; border: 0; background: transparent;
-  font: inherit; font-weight: 700; color: inherit; text-align: left; cursor: pointer;
+  width: calc(100% - 22px); margin: 0; padding: 5px 10px 5px 4px; border: 0;
+  background: transparent; font: inherit; font-weight: 700; color: inherit;
+  text-align: left; cursor: pointer; overflow: hidden;
+}
+#page-holds button.colhead-btn span:first-child {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 #page-holds th.colhead:hover { background: #c5d4ee; }
+#page-holds th.colhead.drop { box-shadow: inset 3px 0 0 var(--accent); }
 #page-holds th.colhead .mark {
-  display: inline-block; width: 12px; margin-left: 4px;
+  display: inline-block; width: 12px; margin-left: 4px; flex: none;
   font-size: 10px; color: var(--accent); font-weight: 700;
 }
+#page-holds .col-resize, #page-holds .row-resize { position: absolute; z-index: 5; }
+#page-holds .col-resize { top: 0; right: -3px; width: 7px; bottom: 0; cursor: col-resize; }
+#page-holds .row-resize { left: 0; right: 0; bottom: -3px; height: 6px; cursor: row-resize; }
+#page-holds tbody td {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  height: var(--hold-row); max-height: var(--hold-row); line-height: 18px;
+}
+#page-holds table.rows-wrap tbody td { white-space: normal; line-height: 16px; }
+#page-holds tr.open td {
+  white-space: pre-wrap; height: auto; max-height: none; overflow: visible;
+}
+#page-holds th.sticky, #page-holds td.sticky {
+  position: sticky; left: 0; z-index: 3; background: #fff;
+  box-shadow: 1px 0 0 var(--border);
+}
+#page-holds th.sticky { z-index: 4; background: var(--header-bg); }
+#page-holds tr:hover td.sticky { background: var(--hover); }
+#page-holds tr.open td.sticky { background: #fff; }
 #page-holds tr.hold-rest td { border-top: 2px solid var(--border); }

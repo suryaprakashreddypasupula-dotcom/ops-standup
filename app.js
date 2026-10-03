@@ -1015,6 +1015,68 @@
     });
     return rows.map((x) => x.r);
   }
+  const HOLD_LAYOUT_KEY = "ops-standup:hold-layout";
+  function holdLayout() {
+    if (state.holdLayout) return state.holdLayout;
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(HOLD_LAYOUT_KEY) || "{}") || {}; } catch (_) {}
+    state.holdLayout = {
+      order: Array.isArray(saved.order) ? saved.order : [],
+      widths: saved.widths && typeof saved.widths === "object" ? saved.widths : {},
+      rowH: Number(saved.rowH) >= 22 ? Number(saved.rowH) : 28,
+    };
+    return state.holdLayout;
+  }
+  function saveHoldLayout() {
+    const l = holdLayout();
+    localStorage.setItem(HOLD_LAYOUT_KEY, JSON.stringify({ order: l.order, widths: l.widths, rowH: l.rowH }));
+  }
+  function defaultHoldWidth(col) {
+    if (/reason/i.test(col)) return 280;
+    return Math.max(128, Math.min(200, Math.ceil(col.length * 7.4 + 72)));
+  }
+  function holdColWidth(col) {
+    const n = Number(holdLayout().widths[col]);
+    return n >= 48 ? n : defaultHoldWidth(col);
+  }
+  function visibleHoldCols() {
+    const l = holdLayout();
+    const known = new Set(state.holdCols);
+    const order = (l.order || []).filter((c) => known.has(c));
+    state.holdCols.forEach((c) => { if (!order.includes(c)) order.push(c); });
+    l.order = order;
+    return order;
+  }
+  function moveHoldCol(from, to) {
+    if (!from || !to || from === to) return;
+    const order = visibleHoldCols().slice();
+    const i = order.indexOf(from);
+    const j = order.indexOf(to);
+    if (i < 0 || j < 0) return;
+    order.splice(i, 1);
+    order.splice(j, 0, from);
+    holdLayout().order = order;
+    saveHoldLayout();
+    renderHolds();
+  }
+  function bindHoldResize(handle, begin) {
+    handle.addEventListener("mousedown", (e) => {
+      if (e.button !== 0 || e.detail > 1) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const apply = begin(e);
+      const move = (ev) => apply(ev);
+      const up = () => {
+        document.removeEventListener("mousemove", move);
+        document.removeEventListener("mouseup", up);
+        saveHoldLayout();
+      };
+      document.addEventListener("mousemove", move);
+      document.addEventListener("mouseup", up);
+    });
+    handle.addEventListener("click", (e) => e.stopPropagation());
+    handle.addEventListener("dragstart", (e) => e.preventDefault());
+  }
   function renderHolds() {
     const host = $("page-holds");
     if (!host) return;
@@ -1023,22 +1085,60 @@
       host.appendChild(el(`<div class="empty">No On Hold External Detail tab in this Sheet.</div>`));
       return;
     }
+    const cols = visibleHoldCols();
     const rows = orderedHolds();
     const manual = rows.filter(isManualHold).length;
     const rest = rows.length - manual;
-    host.appendChild(el(
+    const head = el(
       `<div class="page-head"><h2>${esc(findTab("On Hold External Detail") || "On Hold External Detail")}</h2>`
-      + `<span class="legend">${manual} manual on top · ${rest} below. Click a column heading to sort. Click it again to reverse.</span></div>`
-    ));
+      + `<span class="legend">${manual} manual on top · ${rest} below. Drag ⋮⋮ to move a column. Drag an edge to resize. Drag the header bottom for row height. Click a heading to sort. Click a row to read it.</span></div>`
+    );
+    const reset = el(`<button type="button" class="linklike">Reset layout</button>`);
+    reset.onclick = () => {
+      state.holdLayout = { order: state.holdCols.slice(), widths: {}, rowH: 28 };
+      saveHoldLayout();
+      renderHolds();
+    };
+    head.appendChild(reset);
+    host.appendChild(head);
+
     const wrap = el(`<div class="grid-wrap"></div>`);
     const table = document.createElement("table");
     table.className = "grid";
+    const rowH = holdLayout().rowH;
+    table.style.setProperty("--hold-row", rowH + "px");
+    if (rowH > 34) table.classList.add("rows-wrap");
+    const totalW = cols.reduce((sum, c) => sum + holdColWidth(c), 0);
+    table.style.width = totalW + "px";
+
+    const cg = document.createElement("colgroup");
+    cols.forEach((c) => {
+      const col = document.createElement("col");
+      col.dataset.col = c;
+      col.style.width = holdColWidth(c) + "px";
+      cg.appendChild(col);
+    });
+    table.appendChild(cg);
+
     const thead = document.createElement("thead");
     const hr = document.createElement("tr");
-    state.holdCols.forEach((c) => {
+    cols.forEach((c) => {
       const th = document.createElement("th");
       th.className = "colhead";
       th.scope = "col";
+      if (c === "PO Number") th.classList.add("sticky");
+      const grip = document.createElement("span");
+      grip.className = "grip";
+      grip.textContent = "⋮⋮";
+      grip.title = "Drag to move this column";
+      grip.draggable = true;
+      grip.addEventListener("dragstart", (e) => {
+        state._holdDrag = c;
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", c);
+        th.classList.add("dragging");
+      });
+      grip.addEventListener("dragend", () => { th.classList.remove("dragging"); state._holdDrag = ""; });
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "colhead-btn";
@@ -1053,20 +1153,73 @@
         else state.holdSort = { col: c, dir: 1 };
         renderHolds();
       };
-      th.appendChild(btn);
+      th.addEventListener("dragover", (e) => { e.preventDefault(); th.classList.add("drop"); });
+      th.addEventListener("dragleave", () => th.classList.remove("drop"));
+      th.addEventListener("drop", (e) => {
+        e.preventDefault();
+        th.classList.remove("drop");
+        moveHoldCol(e.dataTransfer.getData("text/plain") || state._holdDrag, c);
+      });
+      const colEdge = document.createElement("span");
+      colEdge.className = "col-resize";
+      colEdge.title = "Drag to resize. Double-click to reset.";
+      bindHoldResize(colEdge, (down) => {
+        const base = holdColWidth(c);
+        const x0 = down.clientX;
+        return (ev) => {
+          const w = Math.max(48, Math.round(base + ev.clientX - x0));
+          holdLayout().widths[c] = w;
+          const colEl = table.querySelector(`col[data-col="${CSS.escape(c)}"]`);
+          if (colEl) colEl.style.width = w + "px";
+          table.style.width = cols.reduce((sum, name) => sum + holdColWidth(name), 0) + "px";
+        };
+      });
+      colEdge.addEventListener("dblclick", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        delete holdLayout().widths[c];
+        saveHoldLayout();
+        renderHolds();
+      });
+      const rowEdge = document.createElement("span");
+      rowEdge.className = "row-resize";
+      rowEdge.title = "Drag to set row height. Double-click for one line.";
+      bindHoldResize(rowEdge, (down) => {
+        const base = holdLayout().rowH;
+        const y0 = down.clientY;
+        return (ev) => {
+          const h = Math.max(22, Math.min(180, Math.round(base + ev.clientY - y0)));
+          holdLayout().rowH = h;
+          table.style.setProperty("--hold-row", h + "px");
+          table.classList.toggle("rows-wrap", h > 34);
+        };
+      });
+      rowEdge.addEventListener("dblclick", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        holdLayout().rowH = 28;
+        saveHoldLayout();
+        renderHolds();
+      });
+      th.append(grip, btn, colEdge, rowEdge);
       hr.appendChild(th);
     });
     thead.appendChild(hr);
+
     const tb = document.createElement("tbody");
     let seenRest = false;
     rows.forEach((r) => {
       const tr = document.createElement("tr");
       if (!isManualHold(r) && !seenRest) { tr.classList.add("hold-rest"); seenRest = true; }
-      state.holdCols.forEach((c) => {
+      tr.addEventListener("click", () => tr.classList.toggle("open"));
+      cols.forEach((c) => {
         const td = document.createElement("td");
         const v = r[c];
-        if (columnIsNumeric(c, state.holds) && num(v) !== null) { td.className = "num"; td.textContent = v; }
-        else td.textContent = v == null ? "" : v;
+        const text = v == null ? "" : String(v);
+        if (c === "PO Number") td.classList.add("sticky");
+        if (columnIsNumeric(c, state.holds) && num(v) !== null) td.classList.add("num");
+        td.textContent = text;
+        if (text) td.title = text;
         tr.appendChild(td);
       });
       tb.appendChild(tr);
