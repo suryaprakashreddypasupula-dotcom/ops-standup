@@ -6,6 +6,8 @@
  *   page 2  Delinquency by Station — same columns as the Sheet; every number
  *           opens the POs behind it (from the "Delinquency Detail" tab), each PO
  *           links to its workbench, and notes can be written per PO or per row.
+ *   page 5  Company Volume Trends  — the present week only, from the tab that
+ *           already has every week. Outlook is a first read of growth.
  * Notes are appended to the "Notes" tab of the SAME Sheet, so they belong to
  * that night's pack only. Nothing is stored on this site or in this repo.
  */
@@ -53,6 +55,7 @@
     personFocus: null,
     holds: [], holdCols: [],
     holdSort: { col: "", dir: 1 },
+    volume: [], volumeCols: [],
     page: "summary",
   };
 
@@ -194,6 +197,7 @@
     const tTat = findTab("TAT Report");
     const tPerson = findTab("Prev Day by Person");
     const tHolds = findTab("On Hold External Detail");
+    const tVolume = findTab("Company Volume Trends");
     if (!tSummary && !tDel) throw new Error(`This Sheet has no "Ops Summary" or "Delinquency by Station" tab. Is it the Ops Standup Sheet?`);
 
     // OTS and TAT are limited to the columns the click-through reads, so the
@@ -201,7 +205,7 @@
     const rangeOf = (tab, cols) => cols ? `${quoteTab(tab)}!${cols}` : quoteTab(tab);
     const wanted = [
       [tSummary, null], [tDel, null], [tDetail, null], [tNotes, null],
-      [tOts, "A:Q"], [tTat, "A:H"], [tPerson, null], [tHolds, null],
+      [tOts, "A:Q"], [tTat, "A:H"], [tPerson, null], [tHolds, null], [tVolume, null],
     ].filter((pair) => pair[0]);
     const ranges = wanted.map(([tab, cols]) => "ranges=" + encodeURIComponent(rangeOf(tab, cols)));
     const data = await api(`${SHEETS_API}/${sheetId}/values:batchGet?${ranges.join("&")}&valueRenderOption=FORMATTED_VALUE`);
@@ -224,6 +228,9 @@
     state.holds = holds.rows;
     state.holdCols = holds.cols;
     state.holdSort = { col: "", dir: 1 };
+    const volume = toObjects(byTab[tVolume] || []);
+    state.volume = volume.rows;
+    state.volumeCols = volume.cols;
     state.hasDetail = !!tDetail;
     state.hasNotes = !!tNotes;
   }
@@ -1229,6 +1236,251 @@
     host.appendChild(wrap);
   }
 
+  // ───────────────────────── page 5: Company Volume Trends ─────────────────────────
+  // The Sheet tab already has every week. This page keeps the week that
+  // contains the pack date (10_3 → the week of 10/3) and shows the volume
+  // columns that are already on that tab. Outlook is only a first read of
+  // growth so the companies that are rising sit at the top.
+  function volumeHeaderKey(col) {
+    return String(col || "").toLowerCase().replace(/[_%]+/g, " ").replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+  }
+  function metricNum(v) {
+    const s = String(v == null ? "" : v).trim().replace(/,/g, "");
+    if (!s || looksLikeWeekLabel(s)) return null;
+    const m = s.match(/^([+-]?\d+(?:\.\d+)?)\s*%?$/);
+    return m ? Number(m[1]) : null;
+  }
+  function looksLikeWeekLabel(v) {
+    const s = String(v || "").trim();
+    if (!s) return false;
+    if (/\d{4}\s*[- ]?w\d{1,2}/i.test(s)) return true;
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return true;
+    if (/^\d{1,2}\/\d{1,2}(\/\d{2,4})?$/.test(s)) return true;
+    if (/week of/i.test(s)) return true;
+    return false;
+  }
+  function columnShare(col, rows, pred) {
+    const vals = rows.map((r) => String(r[col] == null ? "" : r[col]).trim()).filter(Boolean);
+    if (!vals.length) return 0;
+    return vals.filter(pred).length / vals.length;
+  }
+  function reportDateUtc() {
+    const md = reportMonthDay();
+    if (!md) {
+      const parts = new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", year: "numeric", month: "numeric", day: "numeric" }).formatToParts(new Date());
+      const y = Number(parts.find((p) => p.type === "year").value);
+      const m = Number(parts.find((p) => p.type === "month").value);
+      const d = Number(parts.find((p) => p.type === "day").value);
+      return new Date(Date.UTC(y, m - 1, d));
+    }
+    return new Date(Date.UTC(chicagoYear(md.month), md.month - 1, md.day));
+  }
+  function reportWeekWindow(report) {
+    const monday = new Date(report.getTime());
+    const day = monday.getUTCDay();
+    monday.setUTCDate(monday.getUTCDate() + (day === 0 ? -6 : 1 - day));
+    const start = new Date(monday.getTime());
+    start.setUTCDate(start.getUTCDate() - 1);
+    const end = new Date(monday.getTime());
+    end.setUTCDate(end.getUTCDate() + 6);
+    return { monday: monday, start: start, end: end };
+  }
+  function formatMD(d) { return (d.getUTCMonth() + 1) + "/" + d.getUTCDate(); }
+  function isoWeekParts(date) {
+    const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+    const day = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 4 - day);
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    const week = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+    return { year: d.getUTCFullYear(), week: week };
+  }
+  function parseLooseDate(v, report) {
+    const s = String(v || "").trim();
+    let m = s.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+    m = s.match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+    if (m) {
+      let y = Number(m[3]);
+      if (y < 100) y += 2000;
+      return new Date(Date.UTC(y, Number(m[1]) - 1, Number(m[2])));
+    }
+    m = s.match(/(\d{1,2})\/(\d{1,2})\b/);
+    if (m && report) return new Date(Date.UTC(report.getUTCFullYear(), Number(m[1]) - 1, Number(m[2])));
+    return null;
+  }
+  function weekCellInReportWeek(value, report) {
+    const s = String(value || "").trim();
+    const iso = s.match(/(\d{4})\s*[- ]?\s*w(\d{1,2})/i);
+    if (iso) {
+      const got = isoWeekParts(report);
+      return Number(iso[1]) === got.year && Number(iso[2]) === got.week;
+    }
+    const parsed = parseLooseDate(s, report);
+    if (!parsed) return false;
+    const win = reportWeekWindow(report);
+    return parsed >= win.start && parsed <= win.end;
+  }
+  function assignVolumeCols(cols, rows) {
+    const byKey = new Map();
+    cols.forEach((c) => { const k = volumeHeaderKey(c); if (!byKey.has(k)) byKey.set(k, c); });
+    const used = new Set();
+    function take(names) {
+      for (let i = 0; i < names.length; i++) {
+        const c = byKey.get(names[i]);
+        if (c && !used.has(c)) { used.add(c); return c; }
+      }
+      return "";
+    }
+    let week = take(["week start", "week of", "week ending", "report week", "week label", "week start date"]);
+    let current = take(["week volume", "week orders", "this week", "current week", "orders this week", "orders", "volume", "order count", "insoles", "qty"]);
+    const prev = take(["prev week", "previous week", "prior week", "last week", "prev week orders", "previous week orders"]);
+    const wow = take(["wow change", "wow changes", "wow", "week over week", "wow pct"]);
+    const recent = take(["recent 4 weeks", "recent 4 week", "last 4 weeks", "trailing 4 weeks"]);
+    const prior = take(["prior 4 weeks", "prior 4 week", "previous 4 weeks", "prior four weeks"]);
+    const growth = take(["growth", "growth pct", "volume growth"]);
+    const weekNamed = byKey.get("week");
+    if (weekNamed && !used.has(weekNamed)) {
+      const asWeeks = columnShare(weekNamed, rows, looksLikeWeekLabel);
+      const asNums = columnShare(weekNamed, rows, (v) => metricNum(v) !== null);
+      if (asWeeks >= 0.6 || asWeeks >= asNums) { week = weekNamed; used.add(weekNamed); }
+      else if (!current) { current = weekNamed; used.add(weekNamed); }
+    }
+    if (!week) {
+      const candidate = cols.find((c) => !used.has(c) && columnShare(c, rows, looksLikeWeekLabel) >= 0.6);
+      if (candidate) { week = candidate; used.add(candidate); }
+    }
+    return { week: week, current: current, prev: prev, wow: wow, recent: recent, prior: prior, growth: growth };
+  }
+  function volumeDisplayCols(cols, picked) {
+    const metrics = [picked.current, picked.prev, picked.wow, picked.recent, picked.prior, picked.growth].filter(Boolean);
+    const skip = new Set(metrics);
+    if (picked.week) skip.add(picked.week);
+    const idFirst = [];
+    const rest = [];
+    cols.forEach((c) => {
+      if (skip.has(c)) return;
+      if (/company|clinic|account|customer|factory/.test(volumeHeaderKey(c))) idFirst.push(c);
+      else rest.push(c);
+    });
+    const out = idFirst.slice();
+    if (picked.week) out.push(picked.week);
+    rest.forEach((c) => out.push(c));
+    metrics.forEach((c) => out.push(c));
+    return out;
+  }
+  function volumeOutlook(row, picked) {
+    const g = picked.growth ? metricNum(row[picked.growth]) : null;
+    const recent = picked.recent ? metricNum(row[picked.recent]) : null;
+    const prior = picked.prior ? metricNum(row[picked.prior]) : null;
+    const wow = picked.wow ? metricNum(row[picked.wow]) : null;
+    const fourUp = recent != null && prior != null && recent > prior;
+    const fourDown = recent != null && prior != null && recent < prior;
+    if (g != null) {
+      if (g > 0 && fourUp) return { kind: "grow", text: "Likely to grow" };
+      if (g > 0) return { kind: "grow", text: "Up this week" };
+      if (g < 0 && fourDown) return { kind: "slow", text: "Likely to slow" };
+      if (g < 0) return { kind: "slow", text: "Down this week" };
+      return { kind: "steady", text: "Steady" };
+    }
+    if (wow != null) {
+      if (wow > 0 && fourUp) return { kind: "grow", text: "Likely to grow" };
+      if (wow > 0) return { kind: "grow", text: "Up this week" };
+      if (wow < 0 && fourDown) return { kind: "slow", text: "Likely to slow" };
+      if (wow < 0) return { kind: "slow", text: "Down this week" };
+      return { kind: "steady", text: "Steady" };
+    }
+    return { kind: "", text: "" };
+  }
+  function renderVolume() {
+    const host = $("page-volume");
+    if (!host) return;
+    host.innerHTML = "";
+    if (!state.volumeCols.length) {
+      host.appendChild(el(`<div class="empty">No Company Volume Trends tab in this Sheet.</div>`));
+      return;
+    }
+    const report = reportDateUtc();
+    const win = reportWeekWindow(report);
+    const picked = assignVolumeCols(state.volumeCols, state.volume);
+    let rows = state.volume.slice();
+    let filtered = false;
+    if (picked.week) {
+      filtered = true;
+      rows = state.volume.filter((r) => weekCellInReportWeek(r[picked.week], report));
+    }
+    const weekLabel = formatMD(win.monday) + "–" + formatMD(win.end);
+    const pack = reportMonthDay();
+    const packLabel = pack ? (pack.month + "/" + pack.day) : "this pack";
+    if (!rows.length) {
+      const seen = [];
+      state.volume.forEach((r) => {
+        const v = picked.week ? String(r[picked.week] || "").trim() : "";
+        if (v && !seen.includes(v)) seen.push(v);
+      });
+      const sample = seen.slice(0, 6).map(esc).join(", ");
+      host.appendChild(el(
+        `<div class="page-head"><h2>Company Volume Trends</h2></div>`
+      ));
+      host.appendChild(el(
+        `<div class="empty">No rows for the week of ${esc(weekLabel)} (pack date ${esc(packLabel)}).`
+        + (sample ? ` Week values on the Sheet include ${sample}.` : "")
+        + `</div>`
+      ));
+      return;
+    }
+    rows.sort((a, b) => {
+      const ga = picked.growth ? metricNum(a[picked.growth]) : null;
+      const gb = picked.growth ? metricNum(b[picked.growth]) : null;
+      if (ga == null && gb == null) return 0;
+      if (ga == null) return 1;
+      if (gb == null) return -1;
+      return gb - ga;
+    });
+    const hidden = filtered ? state.volume.length - rows.length : 0;
+    const legend = `Week of ${weekLabel} (pack date ${packLabel}). ${rows.length} ${rows.length === 1 ? "row" : "rows"}.`
+      + (hidden ? ` ${hidden} other-week ${hidden === 1 ? "row stays" : "rows stay"} on the Sheet.` : " This tab has no other weeks.")
+      + " Outlook is a first read from growth.";
+    host.appendChild(el(`<div class="page-head"><h2>Company Volume Trends</h2><span class="legend">${legend}</span></div>`));
+    const cols = volumeDisplayCols(state.volumeCols, picked);
+    const signed = new Set([picked.wow, picked.growth].filter(Boolean));
+    const wrap = el(`<div class="grid-wrap"></div>`);
+    const table = document.createElement("table");
+    table.className = "grid";
+    const thead = document.createElement("thead");
+    const hr = document.createElement("tr");
+    cols.forEach((c) => {
+      const th = document.createElement("th");
+      th.textContent = c;
+      hr.appendChild(th);
+    });
+    const outTh = document.createElement("th");
+    outTh.textContent = "Outlook";
+    hr.appendChild(outTh);
+    thead.appendChild(hr);
+    const tb = document.createElement("tbody");
+    rows.forEach((r) => {
+      const tr = document.createElement("tr");
+      cols.forEach((c) => {
+        const td = document.createElement("td");
+        const text = r[c] == null ? "" : String(r[c]);
+        td.textContent = text;
+        const n = metricNum(text);
+        if (n !== null) td.classList.add("num");
+        if (signed.has(c) && n > 0) td.classList.add("up");
+        else if (signed.has(c) && n < 0) td.classList.add("down");
+        tr.appendChild(td);
+      });
+      const outlook = volumeOutlook(r, picked);
+      const td = document.createElement("td");
+      if (outlook.text) td.appendChild(el(`<span class="pill ${outlook.kind}">${esc(outlook.text)}</span>`));
+      tr.appendChild(td);
+      tb.appendChild(tr);
+    });
+    table.append(thead, tb);
+    wrap.appendChild(table);
+    host.appendChild(wrap);
+  }
+
   // ───────────────────────── shell ─────────────────────────
   function showPage(p) {
     state.page = p;
@@ -1237,6 +1489,7 @@
     $("page-delinquency").hidden = p !== "delinquency";
     $("page-people").hidden = p !== "people";
     $("page-holds").hidden = p !== "holds";
+    $("page-volume").hidden = p !== "volume";
   }
 
   async function start(sheetId) {
@@ -1261,7 +1514,7 @@
       $("gate").hidden = true; $("tabs").hidden = false;
       $("pack-title").textContent = state.title;
       $("user").textContent = state.user; $("signout").hidden = false;
-      renderSummary(); renderDelinquency(); renderPeople(); renderHolds();
+      renderSummary(); renderDelinquency(); renderPeople(); renderHolds(); renderVolume();
       showPage(state.delinquency.length && !state.summary.length ? "delinquency" : "summary");
     } catch (e) {
       err.textContent = e.message; err.hidden = false;

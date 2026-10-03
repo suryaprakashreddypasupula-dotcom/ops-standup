@@ -242,3 +242,13 @@ table.grid tr.factory-start td { border-top: 2px solid var(--border); }
 #page-holds tr:hover td.sticky { background: var(--hover); }
 #page-holds tr.open td.sticky { background: #fff; }
 #page-holds tr.hold-rest td { border-top: 2px solid var(--border); }
+
+/* Company Volume Trends only. */
+#page-volume .grid-wrap { overflow: auto; }
+#page-volume table.grid { min-width: 0; width: max-content; }
+#page-volume td.num { font-variant-numeric: tabular-nums; }
+#page-volume td.up { color: #1b7f4a; font-weight: 700; }
+#page-volume td.down { color: var(--danger); font-weight: 700; }
+#page-volume .pill.grow { background: var(--ok-bg); color: #1b7f4a; }
+#page-volume .pill.slow { background: #fde8e8; color: var(--danger); }
+#page-volume .pill.steady { background: #eef1f6; color: var(--muted); }

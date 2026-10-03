@@ -1,6 +1,6 @@
 /* Synthetic sample data for ?demo=1. Every PO, company and workbench id below is
  * made up. This file exists so the layout can be reviewed without Google sign-in.
- * It mimics the four tabs the real Sheet has and the three Sheets API calls
+ * It mimics the tabs the real Sheet has and the Sheets API calls
  * app.js makes (metadata, values:batchGet, values:append / batchUpdate).
  */
 (function () {
@@ -68,6 +68,16 @@
       ["SOLEFORGE", "demo-hold-3", "Demo Patient C", "English", "Riley Chen", "riley.chen@example.com", "555-0103", "Demo Orthotics", "NEEDS_SHIPPING", "Manual", "Other: clinic asked to pause", "9/20/2026", 9, "", "9/10/2026", "Alex Rivera", "alex.rivera@example.com"],
       ["SOLEMATE", "demo-hold-4", "Demo Patient D", "English", "Quinn Brooks", "quinn.brooks@example.com", "555-0104", "Example Foot Care", "DRAFT", "Auth Flip", "", "9/1/2026", 22, "", "8/28/2026", "", ""],
       ["SOLEFORGE", "demo-hold-5", "Demo Patient E", "Spanish", "Morgan Diaz", "morgan.diaz@example.com", "555-0105", "Sample Clinic A", "NEEDS_MANUFACTURING", "Manual", "Scan unreadable", "9/26/2026", 5, "", "9/18/2026", "Jordan Lee", "jordan.lee@example.com"],
+    ],
+    [`${P} Company Volume Trends`]: [
+      ["Company", "Week", "Week Orders", "Prev Week", "WoW Change", "Recent 4 Weeks", "Prior 4 Weeks", "Growth"],
+      ["Sample Clinic A", "9/28/2026", 48, 36, "33.3%", 170, 140, "21.4%"],
+      ["Sample Clinic B", "9/28/2026", 30, 28, "7.1%", 110, 112, "1.9%"],
+      ["Demo Orthotics", "9/28/2026", 18, 25, "-28.0%", 80, 100, "-20.0%"],
+      ["Example Foot Care", "2026-W40", 22, 22, "0%", 88, 88, "0%"],
+      ["Sample Clinic A", "9/21/2026", 36, 40, "-10.0%", 150, 160, "-6.3%"],
+      ["Paused Demo Clinic", "9/21/2026", 9, 12, "-25.0%", 40, 55, "-27.3%"],
+      ["Sample Clinic A", "10/5/2026", 99, 48, "106.3%", 200, 140, "42.9%"],
     ],
     [`${P} TAT Report`]: [
       ["timeframe", "factory", "workstation", "sla_status", "current_status", "po_number", "days_over", "company_name", "workbench_id"],
