@@ -40,28 +40,6 @@ Sheet itself is only shared inside the domain.
 synthetic sample data from `demo.js` — fake POs and companies — with no sign-in. Use it
 to review layout and behaviour.
 
-## One-time setup (Hike Google account)
-
-The page needs a Google OAuth **client id** (public by design). Create it in the Hike
-Google Workspace so the consent screen can be *Internal* (domain only, no Google review).
-
-1. Go to <https://console.cloud.google.com/> signed in with your Hike account.
-   Create a project, e.g. `ops-standup`. It must sit under the Hike organisation
-   (it will by default when created with a Workspace account).
-2. **APIs & Services → Library** → enable **Google Sheets API**.
-3. **APIs & Services → OAuth consent screen** → User type **Internal** → app name
-   `Ops Standup`, support email = you → Save. Scopes: add
-   `https://www.googleapis.com/auth/spreadsheets` and `…/auth/userinfo.email`.
-4. **APIs & Services → Credentials → Create credentials → OAuth client ID** →
-   type **Web application**. Authorized JavaScript origins:
-   - `https://<user>.github.io`
-   - `http://127.0.0.1:8765` (optional, for local testing)
-   No redirect URIs are needed (token flow runs in a popup).
-5. Copy the client id (ends in `.apps.googleusercontent.com`) into
-   `config.js` → `GOOGLE_CLIENT_ID`, commit, push. That value is meant to be public.
-
-If "Internal" is not offered, the project is not under the Workspace organisation;
-move it or create it again from the Hike account.
 
 ## Local run
 
