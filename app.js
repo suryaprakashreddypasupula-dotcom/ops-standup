@@ -1011,6 +1011,24 @@
     const files = (data.files || []).filter((f) => /Ops Standup/i.test(f.name || "") && !/Priority|Hanger/i.test(f.name || ""));
     files.sort((a, b) => String(b.createdTime || "").localeCompare(String(a.createdTime || "")));
     if (!files.length) throw new Error("No Ops Standup Sheet is shared with this Google account yet.");
+
+    // Only the nightly pack carries the Delinquency Detail and Notes tabs that
+    // the PO drawers and notes read. Other files named "Ops Standup" (an Excel
+    // attachment opened in Google Sheets, a copy, another team's export) can
+    // sit above the pack in Drive. Walk newest → oldest and open the first
+    // file that really is the pack, so a stray copy never hides the clicks.
+    const looksLikePack = (tabs) =>
+      tabs.some((t) => t === "Ops Summary" || t.endsWith(" Ops Summary") || t === "Delinquency by Station" || t.endsWith(" Delinquency by Station"))
+      && tabs.some((t) => t === "Delinquency Detail" || t.endsWith(" Delinquency Detail") || t === NOTES_TAB);
+    for (const f of files) {
+      try {
+        const meta = await api(`${SHEETS_API}/${f.id}?fields=sheets.properties.title`);
+        const tabs = (meta.sheets || []).map((s) => s.properties.title);
+        if (looksLikePack(tabs)) return f.id;
+      } catch (_) { /* not readable as a Sheet; try the next one */ }
+    }
+    // Nothing had the pack tabs. Open the newest one so the error on screen
+    // still names the real Sheet instead of failing silently.
     return files[0].id;
   }
 
