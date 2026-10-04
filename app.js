@@ -87,17 +87,29 @@
     if (/^[a-zA-Z0-9-_]{20,}$/.test(s)) return s;
     return "";
   }
-  function toObjects(values) {
+  // Column positions per tab (1-based), so a note lands in the right Sheet
+  // column even when blank headers sit between named ones.
+  const tabMeta = {};
+  function toObjects(values, tab) {
     if (!values || !values.length) return { cols: [], rows: [] };
     const cols = values[0].map((c) => String(c == null ? "" : c).trim());
     const rows = [];
     for (let i = 1; i < values.length; i++) {
       const r = values[i]; if (!r || r.every((v) => v === "" || v == null)) continue;
-      const o = {}; cols.forEach((c, j) => { o[c] = r[j] == null ? "" : r[j]; });
+      const o = {}; cols.forEach((c, j) => { if (c) o[c] = r[j] == null ? "" : r[j]; });
       o._row = i + 1;
       rows.push(o);
     }
+    if (tab) {
+      const pos = {};
+      cols.forEach((c, j) => { if (c && !(c in pos)) pos[c] = j + 1; });
+      tabMeta[tab] = { pos: pos, width: cols.length };
+    }
     return { cols: cols.filter((c) => c), rows };
+  }
+  function colPosition(tab, col, fallback) {
+    const m = tabMeta[tab];
+    return m && m.pos[col] ? m.pos[col] : fallback;
   }
   function quoteTab(name) { return "'" + name.replace(/'/g, "''") + "'"; }
   function colLetter(n) {
@@ -211,9 +223,15 @@
 
   // ───────────────────────── sheets ─────────────────────────
   async function loadSheet(sheetId) {
-    const meta = await api(`${SHEETS_API}/${sheetId}?fields=properties.title,sheets.properties.title`);
+    const meta = await api(`${SHEETS_API}/${sheetId}?fields=properties.title,sheets.properties(title,sheetId,gridProperties.columnCount)`);
     state.title = meta.properties.title;
     state.tabs = (meta.sheets || []).map((s) => s.properties.title);
+    state.sheetIds = {};
+    state.gridCols = {};
+    (meta.sheets || []).forEach((s) => {
+      state.sheetIds[s.properties.title] = s.properties.sheetId;
+      state.gridCols[s.properties.title] = (s.properties.gridProperties || {}).columnCount || 0;
+    });
 
     const tSummary = findTab("Ops Summary");
     const tDel = findTab("Delinquency by Station");
@@ -244,24 +262,24 @@
       byTab[name] = vr.values || [];
     });
 
-    const s = toObjects(byTab[tSummary] || []); state.summary = tagRows(s.rows, tSummary); state.summaryCols = s.cols;
-    const d = toObjects(byTab[tDel] || []); state.delinquency = tagRows(d.rows, tDel); state.delinquencyCols = d.cols;
-    const detail = toObjects(byTab[tDetail] || []);
+    const s = toObjects(byTab[tSummary] || [], tSummary); state.summary = tagRows(s.rows, tSummary); state.summaryCols = s.cols;
+    const d = toObjects(byTab[tDel] || [], tDel); state.delinquency = tagRows(d.rows, tDel); state.delinquencyCols = d.cols;
+    const detail = toObjects(byTab[tDetail] || [], tDetail);
     state.detail = tagRows(detail.rows, tDetail);
     state.detailCols = detail.cols;
     state.notes = tNotes ? toObjects(byTab[tNotes] || []).rows.filter((n) => n.note) : [];
-    const ots = toObjects(byTab[tOts] || []);
-    const tat = toObjects(byTab[tTat] || []);
+    const ots = toObjects(byTab[tOts] || [], tOts);
+    const tat = toObjects(byTab[tTat] || [], tTat);
     state.orders = ordersBehindSummary(ots.rows, tat.rows);
     state.reports = {
       ots: { tab: tOts, suffix: "OTS Report", rows: tagRows(ots.rows, tOts), cols: ots.cols, sort: { col: "", dir: 1 }, filters: {}, query: "" },
       tat: { tab: tTat, suffix: "TAT Report", rows: tagRows(tat.rows, tTat), cols: tat.cols, sort: { col: "", dir: 1 }, filters: {}, query: "" },
     };
-    const person = toObjects(byTab[tPerson] || []);
+    const person = toObjects(byTab[tPerson] || [], tPerson);
     state.byPerson = tagRows(person.rows, tPerson);
     state.byPersonCols = person.cols;
     state.personFocus = null;
-    const holds = toObjects(byTab[tHolds] || []);
+    const holds = toObjects(byTab[tHolds] || [], tHolds);
     state.holds = tagRows(holds.rows, tHolds);
     state.holdCols = holds.cols;
     state.holdSort = { col: "", dir: 1 };
@@ -276,6 +294,125 @@
     state.volumeCols = volume.cols;
     state.hasDetail = !!tDetail;
     state.hasNotes = !!tNotes;
+    await loadNoteColors([
+      [tSummary, state.summary, s.cols], [tDel, state.delinquency, d.cols], [tDetail, state.detail, detail.cols],
+      [tOts, state.reports.ots.rows, ots.cols], [tTat, state.reports.tat.rows, tat.cols],
+      [tPerson, state.byPerson, person.cols], [tHolds, state.holds, holds.cols],
+    ]);
+  }
+
+  // Colored words are real text color in the Sheet cell. The page keeps
+  // [red]…[/red] only inside the editor and turns it into a text run on save.
+  function hexToRgb(hex) {
+    const n = parseInt(hex.slice(1), 16);
+    return { red: ((n >> 16) & 255) / 255, green: ((n >> 8) & 255) / 255, blue: (n & 255) / 255 };
+  }
+  function nearestNoteColor(c) {
+    if (!c) return "";
+    const r = (c.red || 0) * 255, g = (c.green || 0) * 255, b = (c.blue || 0) * 255;
+    if (r < 40 && g < 40 && b < 40) return "";
+    let best = "", bestD = Infinity;
+    NOTE_COLORS.forEach(([name, hex]) => {
+      const t = hexToRgb(hex);
+      const d = (r - t.red * 255) ** 2 + (g - t.green * 255) ** 2 + (b - t.blue * 255) ** 2;
+      if (d < bestD) { bestD = d; best = name; }
+    });
+    return bestD < 140 * 140 ? best : "";
+  }
+  function noteToRuns(text) {
+    const re = /\[(red|orange|green|blue|purple)\]([\s\S]*?)\[\/\1\]/g;
+    let plain = "", last = 0, m;
+    const runs = [];
+    while ((m = re.exec(text))) {
+      plain += text.slice(last, m.index);
+      runs.push({ startIndex: plain.length, format: { foregroundColor: hexToRgb(NOTE_COLOR_MAP[m[1]]) } });
+      plain += m[2];
+      runs.push({ startIndex: plain.length, format: {} });
+      last = m.index + m[0].length;
+    }
+    plain += text.slice(last);
+    const clean = runs.filter((r) => r.startIndex < plain.length);
+    if (clean.length && clean[0].startIndex > 0) clean.unshift({ startIndex: 0, format: {} });
+    return { plain: plain, runs: clean };
+  }
+  function runsToNote(plain, runs) {
+    if (!runs || !runs.length) return plain;
+    const sorted = runs.slice().sort((a, b) => (a.startIndex || 0) - (b.startIndex || 0));
+    let out = "", cursor = 0, color = "";
+    const flush = (end) => {
+      const seg = plain.slice(cursor, end);
+      if (!seg) return;
+      out += color ? "[" + color + "]" + seg + "[/" + color + "]" : seg;
+      cursor = end;
+    };
+    sorted.forEach((r) => {
+      flush(r.startIndex || 0);
+      const f = r.format || {};
+      const c = f.foregroundColor || (f.foregroundColorStyle && f.foregroundColorStyle.rgbColor);
+      color = nearestNoteColor(c);
+    });
+    flush(plain.length);
+    return out.replace(/\[\/(\w+)\]\[\1\]/g, "");
+  }
+  async function loadNoteColors(groups) {
+    const want = [];
+    groups.forEach(([tab, rows, cols]) => {
+      if (!tab || !rows.length) return;
+      cols.forEach((c) => {
+        if (!isNoteHeader(c)) return;
+        if (!rows.some((r) => String(r[c] || "").trim())) return;
+        const idx = colPosition(tab, c, 0);
+        if (idx) want.push({ tab: tab, col: c, idx: idx, rows: rows });
+      });
+    });
+    if (!want.length) return;
+    const ranges = want.map((w) => "ranges=" + encodeURIComponent(quoteTab(w.tab) + "!" + colLetter(w.idx) + "2:" + colLetter(w.idx)));
+    let res;
+    try {
+      res = await api(`${SHEETS_API}/${state.sheetId}?${ranges.join("&")}&fields=sheets(properties.title,data(startRow,startColumn,rowData(values(formattedValue,textFormatRuns))))`);
+    } catch (_) { return; }
+    const blocks = [];
+    (res.sheets || []).forEach((sh) => {
+      (sh.data || []).forEach((d) => blocks.push({ tab: sh.properties.title, startRow: d.startRow || 0, startColumn: d.startColumn || 0, rowData: d.rowData || [] }));
+    });
+    blocks.forEach((b) => {
+      const w = want.find((x) => x.tab === b.tab && x.idx === b.startColumn + 1);
+      if (!w) return;
+      b.rowData.forEach((rd, i) => {
+        const cell = rd && rd.values && rd.values[0];
+        if (!cell || !cell.textFormatRuns || !cell.textFormatRuns.length) return;
+        const rowNumber = b.startRow + i + 1;
+        const row = w.rows.find((r) => r._row === rowNumber);
+        if (!row) return;
+        const plain = cell.formattedValue != null ? String(cell.formattedValue) : String(row[w.col] || "");
+        row[w.col] = runsToNote(plain, cell.textFormatRuns);
+      });
+    });
+  }
+  // A tab converted from the nightly file can be exactly as wide as its data.
+  // Add columns first so the new Note column has somewhere to go.
+  async function ensureGridWidth(tab, colIndex) {
+    const have = state.gridCols && state.gridCols[tab];
+    const sheetId = state.sheetIds && state.sheetIds[tab];
+    if (!have || sheetId == null || colIndex <= have) return;
+    await api(`${SHEETS_API}/${state.sheetId}:batchUpdate`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requests: [{ appendDimension: { sheetId: sheetId, dimension: "COLUMNS", length: colIndex - have } }] }),
+    });
+    state.gridCols[tab] = colIndex;
+  }
+  async function writeNoteCell(tab, colIndex, rowNumber, text) {
+    const sheetId = state.sheetIds && state.sheetIds[tab];
+    const { plain, runs } = noteToRuns(text);
+    if (sheetId == null || !runs.length) return writeSheetCell(tab, colIndex, rowNumber, plain);
+    await api(`${SHEETS_API}/${state.sheetId}:batchUpdate`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requests: [{ updateCells: {
+        range: { sheetId: sheetId, startRowIndex: rowNumber - 1, endRowIndex: rowNumber, startColumnIndex: colIndex - 1, endColumnIndex: colIndex },
+        rows: [{ values: [{ userEnteredValue: { stringValue: plain }, textFormatRuns: runs }] }],
+        fields: "userEnteredValue,textFormatRuns",
+      } }] }),
+    });
   }
 
   // Ops Summary value → the orders already listed on OTS Report / TAT Report.
@@ -379,12 +516,14 @@
     });
   }
 
-  function nextNoteSlot(cols, row) {
+  function nextNoteSlot(tab, cols, row) {
     for (let i = 0; i < cols.length; i++) {
-      if (isNoteHeader(cols[i]) && !String(row[cols[i]] || "").trim()) return { index: i + 1, header: cols[i], fresh: false };
+      if (isNoteHeader(cols[i]) && !String(row[cols[i]] || "").trim()) return { index: colPosition(tab, cols[i], i + 1), header: cols[i], fresh: false };
     }
     const n = cols.filter(isNoteHeader).length + 1;
-    return { index: cols.length + 1, header: n === 1 ? "Note" : "Note " + n, fresh: true };
+    const m = tabMeta[tab];
+    const width = m ? m.width : cols.length;
+    return { index: width + 1, header: n === 1 ? "Note" : "Note " + n, fresh: true };
   }
 
   function notesOnRow(row, cols) {
@@ -399,7 +538,7 @@
         note: po ? po[2] : raw,
         po_number: po ? po[1].trim() : "",
         user: "", ts: "",
-        sheetTab: row._tab, sheetCol: c, sheetColIndex: i + 1, sheetRow: row._row, record: row,
+        sheetTab: row._tab, sheetCol: c, sheetColIndex: colPosition(row._tab, c, i + 1), sheetRow: row._row, record: row,
       });
     });
     return out;
@@ -407,19 +546,23 @@
 
   async function addRowNote(tab, cols, row, text) {
     if (!tab || !row || !row._row) throw new Error("This row has no place on the Sheet to write.");
-    const slot = nextNoteSlot(cols, row);
+    const slot = nextNoteSlot(tab, cols, row);
     if (slot.fresh) {
+      await ensureGridWidth(tab, slot.index);
       await writeSheetCell(tab, slot.index, 1, slot.header);
       cols.push(slot.header);
+      const m = tabMeta[tab] || (tabMeta[tab] = { pos: {}, width: cols.length });
+      m.pos[slot.header] = slot.index;
+      m.width = Math.max(m.width, slot.index);
     }
-    await writeSheetCell(tab, slot.index, row._row, text);
+    await writeNoteCell(tab, slot.index, row._row, text);
     row[slot.header] = text;
   }
 
   async function updateNote(note, text) {
     if (note.sheetTab && note.sheetCol) {
       const stored = text && note.po_number ? "PO " + note.po_number + ": " + text : text;
-      await writeSheetCell(note.sheetTab, note.sheetColIndex, note.sheetRow, stored);
+      await writeNoteCell(note.sheetTab, note.sheetColIndex, note.sheetRow, stored);
       if (note.record) note.record[note.sheetCol] = stored;
       note.note = text;
       return;
@@ -830,9 +973,8 @@
         const b = el(`<button type="button" class="linklike">${ns.length ? "Add another note" : "Add note"}</button>`);
         b.onclick = () => {
           showNoteEditor(act, "", placeholder, paint, async (text) => {
-            const detailRow = state.detail.find((item) => item.po_number === d.po_number && stationKey(item) === stationKey(row) && item._row);
-            if (detailRow) await addRowNote(findTab("Delinquency Detail"), state.detailCols, detailRow, text);
-            else await addRowNote(findTab("Delinquency by Station"), state.delinquencyCols, row, "PO " + d.po_number + ": " + text);
+            // The note goes on the station row people read, tagged with the PO.
+            await addRowNote(findTab("Delinquency by Station"), state.delinquencyCols, row, "PO " + d.po_number + ": " + text);
             toast("Note saved"); paint(); renderDelinquency();
           }, false);
         };

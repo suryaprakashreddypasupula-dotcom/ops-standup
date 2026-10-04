@@ -198,13 +198,58 @@
   TABS[`${P} Company Volume Trends`] = volTab;
 
   function unq(name) { return name.replace(/^'|'$/g, "").replace(/''/g, "'"); }
+  // Text color runs per cell, like the real Sheet keeps them. Key: tab\trow\tcol (0-based).
+  const RUNS = new Map();
+  const GRID_ADDED = [];
+  const tabNames = () => Object.keys(TABS);
+  const colNum = (letters) => { let n = 0; for (const ch of letters.toUpperCase()) n = n * 26 + (ch.charCodeAt(0) - 64); return n; };
 
   window.OPS_STANDUP_DEMO = {
+    gridAdded: GRID_ADDED,
     async handle(url, opts) {
       await new Promise((r) => setTimeout(r, 120));
       if (url.includes("/oauth2/v3/userinfo")) return { email: "you@pebblehealth.io" };
       if (/\/spreadsheets\/demo\?fields=/.test(url)) {
-        return { properties: { title: `${P} Ops Standup (demo)` }, sheets: Object.keys(TABS).map((t) => ({ properties: { title: t } })) };
+        return { properties: { title: `${P} Ops Standup (demo)` }, sheets: tabNames().map((t, i) => ({ properties: { title: t, sheetId: i + 1, gridProperties: { columnCount: (TABS[t][0] || []).length } } })) };
+      }
+      if (/\/spreadsheets\/demo\?ranges=/.test(url)) {
+        const ranges = [...new URL(url).searchParams.getAll("ranges")];
+        const byTab = {};
+        ranges.forEach((rg) => {
+          const m = rg.match(/^'?(.+?)'?!([A-Z]+)(\d+):([A-Z]+)$/i);
+          if (!m) return;
+          const tab = unq(m[1]);
+          const grid = TABS[tab] || [];
+          const col = colNum(m[2]) - 1;
+          const startRow = Number(m[3]) - 1;
+          const rowData = [];
+          for (let r = startRow; r < grid.length; r++) {
+            const v = grid[r] && grid[r][col] != null ? grid[r][col] : "";
+            const runs = RUNS.get(tab + "\t" + r + "\t" + col);
+            rowData.push({ values: [Object.assign({ formattedValue: String(v) }, runs ? { textFormatRuns: runs } : {})] });
+          }
+          (byTab[tab] = byTab[tab] || []).push({ startRow: startRow, startColumn: col, rowData: rowData });
+        });
+        return { sheets: Object.keys(byTab).map((t) => ({ properties: { title: t }, data: byTab[t] })) };
+      }
+      if (url.includes(":batchUpdate")) {
+        const body = opts && opts.body ? JSON.parse(opts.body) : { requests: [] };
+        (body.requests || []).forEach((req) => {
+          if (req.appendDimension) { GRID_ADDED.push(req.appendDimension); return; }
+          const u = req.updateCells;
+          if (!u) return;
+          const tab = tabNames()[u.range.sheetId - 1];
+          const grid = TABS[tab];
+          if (!grid) return;
+          const r = u.range.startRowIndex, c = u.range.startColumnIndex;
+          while (grid.length <= r) grid.push([]);
+          while (grid[r].length <= c) grid[r].push("");
+          const cell = u.rows[0].values[0];
+          grid[r][c] = cell.userEnteredValue ? cell.userEnteredValue.stringValue : "";
+          if (cell.textFormatRuns && cell.textFormatRuns.length) RUNS.set(tab + "\t" + r + "\t" + c, cell.textFormatRuns);
+          else RUNS.delete(tab + "\t" + r + "\t" + c);
+        });
+        return { replies: [{}] };
       }
       if (url.includes("/values:batchGet")) {
         const ranges = [...new URL(url).searchParams.getAll("ranges")].map((t) => unq(t.split("!")[0]));
@@ -215,7 +260,6 @@
         const row = TABS.Notes.length;
         return { updates: { updatedRows: 1, updatedRange: `Notes!A${row}:J${row}` } };
       }
-      if (url.includes(":batchUpdate")) return { replies: [{}] };
       if (opts && opts.method === "PUT") {
         const body = opts.body ? JSON.parse(opts.body) : null;
         const decoded = decodeURIComponent(url);
@@ -231,7 +275,7 @@
             while (grid.length <= row) grid.push([]);
             while (grid[row].length <= col) grid[row].push("");
             if (body.values[0].length > 1 && tab === "Notes") grid[row] = body.values[0];
-            else grid[row][col] = body.values[0][0] == null ? "" : body.values[0][0];
+            else { grid[row][col] = body.values[0][0] == null ? "" : body.values[0][0]; RUNS.delete(tab + "\t" + row + "\t" + col); }
           }
         }
         return {};
