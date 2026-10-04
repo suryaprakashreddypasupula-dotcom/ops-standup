@@ -944,6 +944,36 @@
     return node;
   }
 
+  function personKey(who) {
+    return mailboxOwner(who);
+  }
+
+  function samePerson(a, b) {
+    const key = personKey(a);
+    return !!key && key === personKey(b);
+  }
+
+  function personSeries(board, person) {
+    const series = [];
+    board.stations.forEach((st) => {
+      const matches = st.people.filter((p) => samePerson(p.who, person.who));
+      if (!matches.length) return;
+      const days = matches[0].days.map((d, i) => ({
+        label: d.label,
+        qty: matches.reduce((sum, p) => sum + (p.days[i] ? p.days[i].qty : 0), 0),
+        minutes: matches.reduce((sum, p) => sum + (p.days[i] ? p.days[i].minutes : 0), 0),
+      }));
+      if (!days.some((d) => d.qty > 0)) return;
+      series.push({ label: st.label, days: days });
+    });
+    series.sort((a, b) => {
+      const ai = STATION_COLOR_ORDER.indexOf(a.label);
+      const bi = STATION_COLOR_ORDER.indexOf(b.label);
+      return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi) || a.label.localeCompare(b.label);
+    });
+    return series.length ? series : [{ label: stationLabel(person.station), days: person.days }];
+  }
+
   function trendChart(days) {
     const max = Math.max.apply(null, days.map((d) => d.qty).concat([1]));
     const barW = 46;
@@ -985,6 +1015,54 @@
       const up = points[i].d.qty > points[i - 1].d.qty;
       svg.appendChild(svgEl("line", {
         x1: points[i - 1].cx, y1: points[i - 1].y, x2: points[i].cx, y2: points[i].y,
+        class: up ? "trend-up" : "trend-flat",
+      }));
+    }
+    return svg;
+  }
+
+  function trendChartStacked(series) {
+    const days = series[0].days;
+    const totals = days.map((_, i) => series.reduce((sum, ser) => sum + (ser.days[i] ? ser.days[i].qty : 0), 0));
+    const max = Math.max.apply(null, totals.concat([1]));
+    const barW = 46;
+    const gap = 26;
+    const plotH = 200;
+    const top = 40;
+    const bottom = 36;
+    const left = 12;
+    const width = left + days.length * (barW + gap);
+    const height = top + plotH + bottom;
+    const svg = svgEl("svg", { class: "trend", viewBox: "0 0 " + width + " " + height, width: width, height: height, role: "img" });
+    svg.appendChild(svgEl("title", {})).textContent = "Insoles by day, split by station";
+    const baseline = top + plotH;
+    svg.appendChild(svgEl("line", { x1: left, y1: baseline, x2: width - 8, y2: baseline, class: "trend-base" }));
+    const tops = totals.map((total, i) => {
+      const x = left + i * (barW + gap);
+      let y = baseline;
+      series.forEach((ser) => {
+        const qty = ser.days[i] ? ser.days[i].qty : 0;
+        const h = qty ? Math.max(2, Math.round((qty / max) * (plotH - 8))) : 0;
+        y -= h;
+        if (!h) return;
+        const rect = svgEl("rect", { x: x, y: y, width: barW, height: h, class: "bar" });
+        rect.setAttribute("fill", stationColor(ser.label));
+        svg.appendChild(rect);
+      });
+      return { x: x, y: y, cx: x + barW / 2, total: total, label: days[i].label };
+    });
+    tops.forEach((p) => {
+      const count = svgEl("text", { x: p.cx, y: Math.max(18, p.y - 16), class: "bar-count", "text-anchor": "middle", stroke: "#fff", "stroke-width": "4", "paint-order": "stroke" });
+      count.textContent = String(p.total);
+      svg.appendChild(count);
+      const date = svgEl("text", { x: p.cx, y: baseline + 18, class: "bar-date", "text-anchor": "middle" });
+      date.textContent = p.label;
+      svg.appendChild(date);
+    });
+    for (let i = 1; i < tops.length; i++) {
+      const up = tops[i].total > tops[i - 1].total;
+      svg.appendChild(svgEl("line", {
+        x1: tops[i - 1].cx, y1: tops[i - 1].y, x2: tops[i].cx, y2: tops[i].y,
         class: up ? "trend-up" : "trend-flat",
       }));
     }
@@ -1060,9 +1138,8 @@
     const idx = person.days.length - 1;
     const slices = [];
     board.stations.forEach((st) => {
-      const match = st.people.find((p) => p.who.toLowerCase() === person.who.toLowerCase());
-      if (!match) return;
-      const q = match.days[idx] ? match.days[idx].qty : 0;
+      const matches = st.people.filter((p) => samePerson(p.who, person.who));
+      const q = matches.reduce((sum, p) => sum + (p.days[idx] ? p.days[idx].qty : 0), 0);
       if (q > 0) slices.push({ label: st.label, qty: q });
     });
     slices.sort((a, b) => {
@@ -1076,14 +1153,28 @@
   function renderPersonDetail(host, board, station, person) {
     const name = boardName(station.station, person.who);
     const qty = person.days[person.days.length - 1].qty;
-    const dir = directionLine(person.days);
+    const series = personSeries(board, person);
+    const combinedDays = series.length > 1
+      ? series[0].days.map((d, i) => ({ label: d.label, qty: series.reduce((sum, ser) => sum + (ser.days[i] ? ser.days[i].qty : 0), 0), minutes: 0 }))
+      : person.days;
+    const dir = directionLine(combinedDays);
     host.appendChild(el(`<div class="page-head"><h2>${esc(name)}</h2><span class="legend">${esc(station.label)} · rank ${person.rank} · ${qty} insoles on ${esc(board.day)}</span></div>`));
     const back = el(`<button type="button" class="btn back-board">Back to scoreboard</button>`);
     back.onclick = () => { state.personFocus = null; renderPeople(); };
     host.appendChild(back);
     if (dir) host.appendChild(el(`<p class="direction direction-${dir.kind}">${esc(dir.text)}</p>`));
     const chart = el(`<div class="chart-card"><div class="chart-title">${esc(name)} · insoles by day</div><div class="chart-scroll"></div></div>`);
-    chart.querySelector(".chart-scroll").appendChild(trendChart(person.days));
+    chart.querySelector(".chart-scroll").appendChild(series.length > 1 ? trendChartStacked(series) : trendChart(person.days));
+    if (series.length > 1) {
+      const legend = el(`<p class="target-legend"></p>`);
+      series.forEach((ser) => {
+        const last = ser.days[ser.days.length - 1] ? ser.days[ser.days.length - 1].qty : 0;
+        const key = el(`<span class="target-key"><i class="swatch"></i>${esc(ser.label)} ${last}</span>`);
+        key.querySelector(".swatch").style.background = stationColor(ser.label);
+        legend.appendChild(key);
+      });
+      chart.appendChild(legend);
+    }
     host.appendChild(chart);
 
     const perHour = hourlyUnits(station.station);
