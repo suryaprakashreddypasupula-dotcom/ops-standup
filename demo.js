@@ -212,8 +212,21 @@
       if (opts && opts.method === "PUT") {
         const body = opts.body ? JSON.parse(opts.body) : null;
         const decoded = decodeURIComponent(url);
-        const m = decoded.match(/Notes'!A(\d+)/i) || decoded.match(/!A(\d+)/);
-        if (body && body.values && m) TABS.Notes[Number(m[1]) - 1] = body.values[0];
+        const cell = decoded.match(/'([^']+)'!([A-Z]+)(\d+)/i);
+        if (body && body.values && cell) {
+          const tab = unq(cell[1]);
+          const grid = TABS[tab];
+          if (grid) {
+            let col = 0;
+            for (const ch of cell[2].toUpperCase()) col = col * 26 + (ch.charCodeAt(0) - 64);
+            col -= 1;
+            const row = Number(cell[3]) - 1;
+            while (grid.length <= row) grid.push([]);
+            while (grid[row].length <= col) grid[row].push("");
+            if (body.values[0].length > 1 && tab === "Notes") grid[row] = body.values[0];
+            else grid[row][col] = body.values[0][0] == null ? "" : body.values[0][0];
+          }
+        }
         return {};
       }
       throw new Error("demo: unhandled " + url);

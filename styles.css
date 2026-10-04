@@ -138,6 +138,22 @@ table.grid tr.factory-start td { border-top: 2px solid var(--border); }
   border-radius: 6px; resize: vertical;
 }
 .note-editor .row { display: flex; gap: 6px; justify-content: flex-end; }
+.note-editor textarea { min-height: 96px; }
+.note-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.note-tools .tool {
+  font: inherit; font-size: 12px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 6px;
+  background: #fff; color: var(--text); cursor: pointer; line-height: 18px;
+}
+.note-tools .tool:hover { background: var(--hover); }
+.note-tools .tool.swatch { width: 24px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+.note-tools .tool.swatch i { width: 12px; height: 12px; border-radius: 50%; background: var(--swatch); display: block; }
+.note-tools .tool-sep { width: 1px; height: 18px; background: var(--border); margin: 0 4px; }
+.note-editor .tool-hint { margin: 0; }
+.note-text { white-space: normal; }
+.note-text .note-list { margin: 2px 0 2px 18px; padding: 0; }
+.note-text .note-list li { margin: 0; padding: 0; }
+.note-text .note-color { font-weight: 600; }
+table.grid td.notecell { vertical-align: top; }
 
 .drawer {
   position: fixed; top: 0; right: 0; bottom: 0; width: min(var(--drawer-w), 96vw);
@@ -272,6 +288,9 @@ table.grid tr.factory-start td { border-top: 2px solid var(--border); }
 #page-holds tbody td {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   height: var(--hold-row); max-height: var(--hold-row); line-height: 18px;
+}
+#page-holds td.notecell {
+  white-space: normal; height: auto; max-height: none; overflow: visible;
 }
 #page-holds table.rows-wrap tbody td { white-space: normal; line-height: 16px; }
 #page-holds tr.open td {

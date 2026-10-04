@@ -14,8 +14,9 @@
  *   page 5  Company Volume Trends  — the present week only, from the tab that
  *           already has every week. A company opens its history, trend,
  *           next-week read and month totals.
- * Notes are appended to the "Notes" tab of the SAME Sheet, so they belong to
- * that night's pack only. Nothing is stored on this site or in this repo.
+ * A new note is written into the next open Note column of that same row, on
+ * whichever tab the row came from. Older notes already on the Notes tab still
+ * show. Nothing is stored on this site or in this repo.
  */
 (function () {
   "use strict";
@@ -55,7 +56,7 @@
     user: "", sheetId: "", title: "", tabs: [],
     summary: [], summaryCols: [],
     delinquency: [], delinquencyCols: [],
-    detail: [], notes: [],
+    detail: [], detailCols: [], notes: [],
     orders: [],
     byPerson: [], byPersonCols: [],
     personFocus: null,
@@ -98,6 +99,22 @@
     return { cols: cols.filter((c) => c), rows };
   }
   function quoteTab(name) { return "'" + name.replace(/'/g, "''") + "'"; }
+  function colLetter(n) {
+    let s = "";
+    while (n > 0) {
+      const m = (n - 1) % 26;
+      s = String.fromCharCode(65 + m) + s;
+      n = Math.floor((n - 1) / 26);
+    }
+    return s;
+  }
+  function isNoteHeader(name) {
+    return /^notes?(?:\s*\d+)?$/i.test(String(name || "").trim());
+  }
+  function tagRows(rows, tab) {
+    (rows || []).forEach((r) => { r._tab = tab; });
+    return rows;
+  }
   function findTab(suffix) { return state.tabs.find((t) => t === suffix) || state.tabs.find((t) => t.endsWith(" " + suffix)); }
   function fmtTs(ts) {
     const d = new Date(ts); if (isNaN(d)) return String(ts);
@@ -226,17 +243,19 @@
       byTab[name] = vr.values || [];
     });
 
-    const s = toObjects(byTab[tSummary] || []); state.summary = s.rows; state.summaryCols = s.cols;
-    const d = toObjects(byTab[tDel] || []); state.delinquency = d.rows; state.delinquencyCols = d.cols;
-    state.detail = toObjects(byTab[tDetail] || []).rows;
+    const s = toObjects(byTab[tSummary] || []); state.summary = tagRows(s.rows, tSummary); state.summaryCols = s.cols;
+    const d = toObjects(byTab[tDel] || []); state.delinquency = tagRows(d.rows, tDel); state.delinquencyCols = d.cols;
+    const detail = toObjects(byTab[tDetail] || []);
+    state.detail = tagRows(detail.rows, tDetail);
+    state.detailCols = detail.cols;
     state.notes = tNotes ? toObjects(byTab[tNotes] || []).rows.filter((n) => n.note) : [];
     state.orders = ordersBehindSummary(toObjects(byTab[tOts] || []).rows, toObjects(byTab[tTat] || []).rows);
     const person = toObjects(byTab[tPerson] || []);
-    state.byPerson = person.rows;
+    state.byPerson = tagRows(person.rows, tPerson);
     state.byPersonCols = person.cols;
     state.personFocus = null;
     const holds = toObjects(byTab[tHolds] || []);
-    state.holds = holds.rows;
+    state.holds = tagRows(holds.rows, tHolds);
     state.holdCols = holds.cols;
     state.holdSort = { col: "", dir: 1 };
     const hanger = toObjects(byTab[tHanger] || []);
@@ -345,7 +364,59 @@
     return rec;
   }
 
+  async function writeSheetCell(tab, colIndex, rowNumber, value) {
+    const a1 = colLetter(colIndex) + rowNumber;
+    await api(`${SHEETS_API}/${state.sheetId}/values/${encodeURIComponent(quoteTab(tab) + "!" + a1)}?valueInputOption=RAW`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ values: [[value]] }),
+    });
+  }
+
+  function nextNoteSlot(cols, row) {
+    for (let i = 0; i < cols.length; i++) {
+      if (isNoteHeader(cols[i]) && !String(row[cols[i]] || "").trim()) return { index: i + 1, header: cols[i], fresh: false };
+    }
+    const n = cols.filter(isNoteHeader).length + 1;
+    return { index: cols.length + 1, header: n === 1 ? "Note" : "Note " + n, fresh: true };
+  }
+
+  function notesOnRow(row, cols) {
+    if (!row || !cols) return [];
+    const out = [];
+    cols.forEach((c, i) => {
+      if (!isNoteHeader(c)) return;
+      const raw = String(row[c] == null ? "" : row[c]).trim();
+      if (!raw) return;
+      const po = raw.match(/^PO\s+([^:]+):\s*([\s\S]*)$/);
+      out.push({
+        note: po ? po[2] : raw,
+        po_number: po ? po[1].trim() : "",
+        user: "", ts: "",
+        sheetTab: row._tab, sheetCol: c, sheetColIndex: i + 1, sheetRow: row._row, record: row,
+      });
+    });
+    return out;
+  }
+
+  async function addRowNote(tab, cols, row, text) {
+    if (!tab || !row || !row._row) throw new Error("This row has no place on the Sheet to write.");
+    const slot = nextNoteSlot(cols, row);
+    if (slot.fresh) {
+      await writeSheetCell(tab, slot.index, 1, slot.header);
+      cols.push(slot.header);
+    }
+    await writeSheetCell(tab, slot.index, row._row, text);
+    row[slot.header] = text;
+  }
+
   async function updateNote(note, text) {
+    if (note.sheetTab && note.sheetCol) {
+      const stored = text && note.po_number ? "PO " + note.po_number + ": " + text : text;
+      await writeSheetCell(note.sheetTab, note.sheetColIndex, note.sheetRow, stored);
+      if (note.record) note.record[note.sheetCol] = stored;
+      note.note = text;
+      return;
+    }
     const row = Number(note._row);
     if (!row) throw new Error("Reload the page, then edit this note.");
     const rec = {
@@ -369,11 +440,15 @@
   function kept(notes) { return notes.filter((n) => String(n.note || "").trim()); }
   function notesForStation(row) {
     const k = stationKey(row);
-    return kept(state.notes.filter((n) => n.page === "delinquency" && n.level === "station" && stationKey(n) === k));
+    const legacy = kept(state.notes.filter((n) => n.page === "delinquency" && n.level === "station" && stationKey(n) === k));
+    return legacy.concat(notesOnRow(row, state.delinquencyCols).filter((n) => !n.po_number));
   }
   function notesForPo(row, po) {
     const k = stationKey(row);
-    return kept(state.notes.filter((n) => n.page === "delinquency" && n.level === "po" && stationKey(n) === k && n.po_number === po));
+    const legacy = kept(state.notes.filter((n) => n.page === "delinquency" && n.level === "po" && stationKey(n) === k && n.po_number === po));
+    const onDetail = state.detail.filter((d) => d.po_number === po && stationKey(d) === k).flatMap((d) => notesOnRow(d, state.detailCols));
+    const onStation = notesOnRow(row, state.delinquencyCols).filter((n) => n.po_number === po);
+    return legacy.concat(onDetail, onStation);
   }
   function poNotesInCell(row, col) {
     const k = stationKey(row);
@@ -381,26 +456,147 @@
   }
   function notesForMetric(row) {
     const k = summaryKey(row);
-    return kept(state.notes.filter((n) => n.page === "summary" && n.level === "metric" &&
+    const legacy = kept(state.notes.filter((n) => n.page === "summary" && n.level === "metric" &&
       [n.bucket, n.factory, n.station_group, n.status].join("|") === k));
+    return legacy.concat(notesOnRow(row, state.summaryCols).filter((n) => !n.po_number));
   }
   function notesForSummaryPo(row, po) {
-    return kept(state.notes.filter((n) => n.page === "summary" && n.level === "po" && n.po_number === po &&
+    const legacy = kept(state.notes.filter((n) => n.page === "summary" && n.level === "po" && n.po_number === po &&
       n.bucket === row.timeframe && n.factory === row.factory && n.status === row.metric));
+    return legacy.concat(notesOnRow(row, state.summaryCols).filter((n) => n.po_number === po));
   }
   function notesForPerson(station, who) {
     const email = String(who || "").toLowerCase();
-    return kept(state.notes.filter((n) => n.page === "people" && n.level === "person" && n.station_group === station && String(n.status || "").toLowerCase() === email));
+    const legacy = kept(state.notes.filter((n) => n.page === "people" && n.level === "person" && n.station_group === station && String(n.status || "").toLowerCase() === email));
+    const key = personKey(who);
+    const rows = state.byPerson.filter((r) => String(r.station || "").trim() === station && (String(r.completed_by || "").toLowerCase() === email || personKey(r.completed_by) === key));
+    return legacy.concat(rows.flatMap((r) => notesOnRow(r, state.byPersonCols)));
+  }
+  function notesForHold(row) {
+    return notesOnRow(row, state.holdCols);
+  }
+
+  // Notes are plain text in one Sheet cell. Line breaks stay inside the cell.
+  // Bullets are "• ", numbers are "1. ", a color is [red]text[/red]. The page
+  // renders those; the Sheet shows the same text.
+  const NOTE_COLORS = [
+    ["red", "#b42318"],
+    ["orange", "#c2410c"],
+    ["green", "#1b7f4a"],
+    ["blue", "#1d4ed8"],
+    ["purple", "#6b4c9a"],
+  ];
+  const NOTE_COLOR_MAP = Object.fromEntries(NOTE_COLORS);
+
+  function renderNoteHtml(text) {
+    const lines = String(text || "").split("\n");
+    const html = [];
+    let list = null;
+    const close = () => { if (list) { html.push(list === "ul" ? "</ul>" : "</ol>"); list = null; } };
+    const inline = (s) => esc(s).replace(/\[(red|orange|green|blue|purple)\]([\s\S]*?)\[\/\1\]/g, (_, c, inner) => `<span class="note-color" style="color:${NOTE_COLOR_MAP[c]}">${inner}</span>`);
+    lines.forEach((line) => {
+      const bullet = line.match(/^\s*(?:[•\-*·])\s+(.*)$/);
+      const numbered = line.match(/^\s*(\d+)[.)]\s+(.*)$/);
+      if (bullet) {
+        if (list !== "ul") { close(); html.push('<ul class="note-list">'); list = "ul"; }
+        html.push("<li>" + inline(bullet[1]) + "</li>");
+      } else if (numbered) {
+        if (list !== "ol") { close(); html.push('<ol class="note-list">'); list = "ol"; }
+        html.push(`<li value="${Number(numbered[1])}">` + inline(numbered[2]) + "</li>");
+      } else {
+        close();
+        html.push(inline(line) + "<br>");
+      }
+    });
+    close();
+    return html.join("").replace(/<br>$/, "");
+  }
+
+  function applyLinePrefix(ta, kind) {
+    const value = ta.value;
+    const start = value.lastIndexOf("\n", ta.selectionStart - 1) + 1;
+    let end = value.indexOf("\n", ta.selectionEnd);
+    if (end < 0) end = value.length;
+    const block = value.slice(start, end);
+    const lines = block.split("\n");
+    const stripped = lines.map((l) => l.replace(/^\s*(?:[•\-*·]|\d+[.)])\s+/, ""));
+    const already = lines.every((l) => kind === "ul" ? /^\s*[•\-*·]\s+/.test(l) : /^\s*\d+[.)]\s+/.test(l));
+    const next = already
+      ? stripped
+      : stripped.map((l, i) => (kind === "ul" ? "• " : (i + 1) + ". ") + l);
+    const replaced = next.join("\n");
+    ta.setRangeText(replaced, start, end, "end");
+    ta.focus();
+  }
+
+  function applyColor(ta, color) {
+    const s = ta.selectionStart;
+    const e = ta.selectionEnd;
+    const selected = ta.value.slice(s, e);
+    if (!selected) {
+      const open = "[" + color + "]";
+      ta.setRangeText(open + "[/" + color + "]", s, e, "end");
+      ta.setSelectionRange(s + open.length, s + open.length);
+      ta.focus();
+      return;
+    }
+    const clean = selected.replace(/\[\/?(?:red|orange|green|blue|purple)\]/g, "");
+    ta.setRangeText("[" + color + "]" + clean + "[/" + color + "]", s, e, "select");
+    ta.focus();
   }
 
   function noteEditor(onSave, onCancel, placeholder, initial, allowEmpty) {
     const box = el(`<div class="note-editor">
+      <div class="note-tools" role="toolbar" aria-label="Note formatting">
+        <button type="button" class="tool" data-list="ul" title="Bullet points">• List</button>
+        <button type="button" class="tool" data-list="ol" title="Numbered points">1. List</button>
+        <span class="tool-sep"></span>
+        ${NOTE_COLORS.map(([name, hex]) => `<button type="button" class="tool swatch" data-color="${name}" title="${name} text" style="--swatch:${hex}"><i></i></button>`).join("")}
+        <button type="button" class="tool" data-color="none" title="Remove color">Clear color</button>
+      </div>
       <textarea placeholder="${esc(placeholder || "Write a note…")}"></textarea>
+      <p class="muted small tool-hint">Enter starts a new line in the same cell. A list continues on the next line.</p>
       <div class="row"><button type="button" class="btn ghost cancel">Cancel</button><button type="button" class="btn primary save">Save</button></div>
     </div>`);
     const ta = box.querySelector("textarea");
     ta.value = initial || "";
     box.addEventListener("click", (e) => e.stopPropagation());
+    box.querySelectorAll(".tool[data-list]").forEach((b) => {
+      b.addEventListener("mousedown", (e) => e.preventDefault());
+      b.onclick = (e) => { e.stopPropagation(); applyLinePrefix(ta, b.dataset.list); };
+    });
+    box.querySelectorAll(".tool[data-color]").forEach((b) => {
+      b.addEventListener("mousedown", (e) => e.preventDefault());
+      b.onclick = (e) => {
+        e.stopPropagation();
+        if (b.dataset.color === "none") {
+          const s = ta.selectionStart, en = ta.selectionEnd;
+          const target = en > s ? ta.value.slice(s, en) : ta.value;
+          const clean = target.replace(/\[\/?(?:red|orange|green|blue|purple)\]/g, "");
+          if (en > s) ta.setRangeText(clean, s, en, "select"); else ta.value = clean;
+          ta.focus();
+          return;
+        }
+        applyColor(ta, b.dataset.color);
+      };
+    });
+    ta.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" || e.metaKey || e.ctrlKey || e.shiftKey) return;
+      const value = ta.value;
+      const start = value.lastIndexOf("\n", ta.selectionStart - 1) + 1;
+      const line = value.slice(start, ta.selectionStart);
+      const bullet = line.match(/^(\s*)([•\-*·])\s+(.*)$/);
+      const numbered = line.match(/^(\s*)(\d+)[.)]\s+(.*)$/);
+      if (!bullet && !numbered) return;
+      e.preventDefault();
+      const body = bullet ? bullet[3] : numbered[3];
+      if (!body.trim()) {
+        ta.setRangeText("", start, ta.selectionStart, "end");
+        return;
+      }
+      const prefix = bullet ? bullet[1] + "• " : numbered[1] + (Number(numbered[2]) + 1) + ". ";
+      ta.setRangeText("\n" + prefix, ta.selectionStart, ta.selectionEnd, "end");
+    });
     box.querySelector(".cancel").onclick = (e) => { e.stopPropagation(); onCancel(); };
     box.querySelector(".save").onclick = async (e) => {
       e.stopPropagation();
@@ -433,8 +629,9 @@
     notes.forEach((n) => {
       const entry = el(`<div class="note-entry"></div>`);
       const text = document.createElement("span");
-      text.innerHTML = esc(n.note).replace(/\n/g, "<br>");
-      const who = el(`<span class="who"> — ${esc(shortUser(n.user))}, ${esc(fmtTs(n.ts))}</span>`);
+      text.className = "note-text";
+      text.innerHTML = renderNoteHtml(n.note);
+      const who = (n.user || n.ts) ? el(`<span class="who"> — ${esc(shortUser(n.user))}, ${esc(fmtTs(n.ts))}</span>`) : null;
       const edit = el(`<button type="button" class="linklike">Edit</button>`);
       const remove = el(`<button type="button" class="linklike">Remove</button>`);
       edit.onclick = (e) => {
@@ -451,7 +648,9 @@
         try { await updateNote(n, ""); toast("Note removed"); paint(); }
         catch (err) { toast("Could not remove: " + err.message, true); remove.disabled = false; }
       };
-      entry.append(text, who, edit, remove);
+      entry.append(text);
+      if (who) entry.appendChild(who);
+      entry.append(edit, remove);
       host.appendChild(entry);
     });
   }
@@ -460,7 +659,7 @@
   function renderSummary() {
     const host = $("page-summary"); host.innerHTML = "";
     if (!state.summary.length) { host.appendChild(el(`<div class="empty">No Ops Summary tab in this Sheet.</div>`)); return; }
-    const cols = state.summaryCols.filter((c) => c.toLowerCase() !== "notes");
+    const cols = state.summaryCols.filter((c) => !isNoteHeader(c));
     host.appendChild(el(`<div class="page-head"><h2>${esc(findTab("Ops Summary"))}</h2><span class="legend">Click a Notes cell to add a note. Edit or Remove changes it.</span></div>`));
     const wrap = el(`<div class="grid-wrap"></div>`);
     const table = el(`<table class="grid"><thead><tr>${cols.map((c) => `<th>${esc(c)}</th>`).join("")}<th>Notes</th></tr></thead><tbody></tbody></table>`);
@@ -491,7 +690,7 @@
       noteTd.onclick = (e) => {
         if (e.target.closest(".note-editor, .linklike, .note-entry")) return;
         showNoteEditor(noteTd, "", placeholder, paint, async (text) => {
-          await appendNote({ page: "summary", level: "metric", bucket: r.timeframe, factory: r.factory, station_group: r.category, status: r.metric, note: text });
+          await addRowNote(findTab("Ops Summary"), state.summaryCols, r, text);
           toast("Note saved"); paint();
         }, false);
       };
@@ -518,7 +717,7 @@
     const host = $("page-delinquency"); host.innerHTML = "";
     if (!state.delinquency.length) { host.appendChild(el(`<div class="empty">No Delinquency by Station tab in this Sheet.</div>`)); return; }
     const hiddenCols = new Set(["completed_yesterday", "completed_2_days_ago", "rejected_yesterday", "rejected_2_days_ago"]);
-    const cols = state.delinquencyCols.filter((c) => c.toLowerCase() !== "notes" && !hiddenCols.has(c));
+    const cols = state.delinquencyCols.filter((c) => !isNoteHeader(c) && !hiddenCols.has(c));
     const legend = state.hasDetail ? "Click any number to see the POs behind it." : "This Sheet has no Delinquency Detail tab, so numbers cannot be opened.";
     host.appendChild(el(`<div class="page-head"><h2>${esc(findTab("Delinquency by Station"))}</h2><span class="legend">${legend}</span></div>`));
     const wrap = el(`<div class="grid-wrap"></div>`);
@@ -551,7 +750,7 @@
       noteTd.onclick = (e) => {
         if (e.target.closest(".note-editor, .linklike, .note-entry")) return;
         showNoteEditor(noteTd, "", placeholder, paint, async (text) => {
-          await appendNote({ page: "delinquency", level: "station", factory: r.factory, station_group: r.station_group, status: r.status, note: text });
+          await addRowNote(findTab("Delinquency by Station"), state.delinquencyCols, r, text);
           toast("Note saved"); paint();
         }, false);
       };
@@ -582,7 +781,7 @@
       const b = el(`<button type="button" class="linklike">Add note</button>`);
       b.onclick = () => {
         showNoteEditor(act, "", placeholder, paintStation, async (text) => {
-          await appendNote({ page: "delinquency", level: "station", factory: row.factory, station_group: row.station_group, status: row.status, bucket: col, note: text });
+          await addRowNote(findTab("Delinquency by Station"), state.delinquencyCols, row, text);
           toast("Note saved"); paintStation(); renderDelinquency();
         }, false);
       };
@@ -624,7 +823,9 @@
         const b = el(`<button type="button" class="linklike">${ns.length ? "Add another note" : "Add note"}</button>`);
         b.onclick = () => {
           showNoteEditor(act, "", placeholder, paint, async (text) => {
-            await appendNote({ page: "delinquency", level: "po", factory: row.factory, station_group: row.station_group, status: row.status, bucket: col, po_number: d.po_number, note: text });
+            const detailRow = state.detail.find((item) => item.po_number === d.po_number && stationKey(item) === stationKey(row) && item._row);
+            if (detailRow) await addRowNote(findTab("Delinquency Detail"), state.detailCols, detailRow, text);
+            else await addRowNote(findTab("Delinquency by Station"), state.delinquencyCols, row, "PO " + d.po_number + ": " + text);
             toast("Note saved"); paint(); renderDelinquency();
           }, false);
         };
@@ -659,7 +860,7 @@
       const b = el(`<button type="button" class="linklike">Add note</button>`);
       b.onclick = () => {
         showNoteEditor(act, "", placeholder, paintMetric, async (text) => {
-          await appendNote({ page: "summary", level: "metric", bucket: row.timeframe, factory: row.factory, station_group: row.category, status: row.metric, note: text });
+          await addRowNote(findTab("Ops Summary"), state.summaryCols, row, text);
           toast("Note saved"); paintMetric(); renderSummary();
         }, false);
       };
@@ -686,7 +887,7 @@
         const b = el(`<button type="button" class="linklike">${ns.length ? "Add another note" : "Add note"}</button>`);
         b.onclick = () => {
           showNoteEditor(act, "", placeholder, paint, async (text) => {
-            await appendNote({ page: "summary", level: "po", bucket: row.timeframe, factory: row.factory, station_group: row.category, status: row.metric, po_number: d.po_number, note: text });
+            await addRowNote(findTab("Ops Summary"), state.summaryCols, row, "PO " + d.po_number + ": " + text);
             toast("Note saved"); paint();
           }, false);
         };
@@ -1239,7 +1440,8 @@
       const add = el(`<button type="button" class="linklike">${ns.length ? "Add another note" : "Add note"}</button>`);
       add.onclick = () => {
         showNoteEditor(act, "", placeholder, paint, async (text) => {
-          await appendNote({ page: "people", level: "person", station_group: station.station, status: person.who, note: text });
+          const personRow = state.byPerson.find((r) => String(r.station || "").trim() === station.station && (String(r.completed_by || "").toLowerCase() === String(person.who || "").toLowerCase() || personKey(r.completed_by) === personKey(person.who)));
+          await addRowNote(findTab("Prev Day by Person"), state.byPersonCols, personRow, text);
           toast("Note saved");
           paint();
         }, false);
@@ -1323,8 +1525,8 @@
   function visibleHoldCols() {
     const l = holdLayout();
     const known = new Set(state.holdCols);
-    const order = (l.order || []).filter((c) => known.has(c));
-    state.holdCols.forEach((c) => { if (!order.includes(c)) order.push(c); });
+    const order = (l.order || []).filter((c) => known.has(c) && !isNoteHeader(c));
+    state.holdCols.forEach((c) => { if (!isNoteHeader(c) && !order.includes(c)) order.push(c); });
     l.order = order;
     return order;
   }
@@ -1392,7 +1594,7 @@
     const rest = rows.length - manual;
     const head = el(
       `<div class="page-head"><h2>${esc(findTab("On Hold External Detail") || "On Hold External Detail")}</h2>`
-      + `<span class="legend">${manual} manual on top · ${rest} below. Click a PO to open its workbench. Drag ⋮⋮ to move a column. Drag an edge to resize. Drag the header bottom for row height. Click a heading to sort. Click a row to read it.</span></div>`
+      + `<span class="legend">${manual} manual on top · ${rest} below. Click a PO to open its workbench. A note is saved in the next open column of that row. Drag ⋮⋮ to move a column. Drag an edge to resize. Drag the header bottom for row height. Click a heading to sort. Click a row to read it.</span></div>`
     );
     const reset = el(`<button type="button" class="linklike">Reset layout</button>`);
     reset.onclick = () => {
@@ -1409,7 +1611,8 @@
     const rowH = holdLayout().rowH;
     table.style.setProperty("--hold-row", rowH + "px");
     if (rowH > 34) table.classList.add("rows-wrap");
-    const totalW = cols.reduce((sum, c) => sum + holdColWidth(c), 0);
+    const noteW = 260;
+    const totalW = cols.reduce((sum, c) => sum + holdColWidth(c), 0) + noteW;
     table.style.width = totalW + "px";
 
     const cg = document.createElement("colgroup");
@@ -1419,6 +1622,9 @@
       col.style.width = holdColWidth(c) + "px";
       cg.appendChild(col);
     });
+    const noteCol = document.createElement("col");
+    noteCol.style.width = noteW + "px";
+    cg.appendChild(noteCol);
     table.appendChild(cg);
 
     const thead = document.createElement("thead");
@@ -1472,7 +1678,7 @@
           holdLayout().widths[c] = w;
           const colEl = table.querySelector(`col[data-col="${CSS.escape(c)}"]`);
           if (colEl) colEl.style.width = w + "px";
-          table.style.width = cols.reduce((sum, name) => sum + holdColWidth(name), 0) + "px";
+          table.style.width = (cols.reduce((sum, name) => sum + holdColWidth(name), 0) + 260) + "px";
         };
       });
       colEdge.addEventListener("dblclick", (e) => {
@@ -1505,6 +1711,9 @@
       th.append(grip, btn, colEdge, rowEdge);
       hr.appendChild(th);
     });
+    const noteTh = document.createElement("th");
+    noteTh.textContent = "Notes";
+    hr.appendChild(noteTh);
     thead.appendChild(hr);
 
     const tb = document.createElement("tbody");
@@ -1536,6 +1745,25 @@
         }
         tr.appendChild(td);
       });
+      const noteTd = document.createElement("td");
+      noteTd.className = "notecell";
+      const poLabel = String(r["PO Number"] || "this hold");
+      const placeholder = "Note on " + poLabel;
+      const paint = () => {
+        fillNotes(noteTd, notesForHold(r), paint, placeholder);
+        noteTd.classList.toggle("empty", !notesForHold(r).length);
+      };
+      paint();
+      noteTd.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (e.target.closest(".note-editor, .linklike, .note-entry")) return;
+        showNoteEditor(noteTd, "", placeholder, paint, async (text) => {
+          await addRowNote(findTab("On Hold External Detail"), state.holdCols, r, text);
+          toast("Note saved");
+          paint();
+        }, false);
+      });
+      tr.appendChild(noteTd);
       tb.appendChild(tr);
     });
     table.append(thead, tb);
