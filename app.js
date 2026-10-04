@@ -57,6 +57,7 @@
     summary: [], summaryCols: [],
     delinquency: [], delinquencyCols: [],
     detail: [], detailCols: [], notes: [],
+    reports: {},
     orders: [],
     byPerson: [], byPersonCols: [],
     personFocus: null,
@@ -227,12 +228,12 @@
     const tVolume = findTab("Company Volume Trends");
     if (!tSummary && !tDel) throw new Error(`This Sheet has no "Ops Summary" or "Delinquency by Station" tab. Is it the Ops Standup Sheet?`);
 
-    // OTS and TAT are limited to the columns the click-through reads, so the
-    // page does not download shoe size, clinician, and the rest of those tabs.
+    // OTS and TAT are read in full. Their own tabs show every column the
+    // Sheet has, and Ops Summary's click-through reads the same rows.
     const rangeOf = (tab, cols) => cols ? `${quoteTab(tab)}!${cols}` : quoteTab(tab);
     const wanted = [
       [tSummary, null], [tDel, null], [tDetail, null], [tNotes, null],
-      [tOts, "A:Q"], [tTat, "A:H"], [tPerson, null], [tHolds, null],
+      [tOts, null], [tTat, null], [tPerson, null], [tHolds, null],
       [tHanger, null], [tUnion, null], [tVolume, null],
     ].filter((pair) => pair[0]);
     const ranges = wanted.map(([tab, cols]) => "ranges=" + encodeURIComponent(rangeOf(tab, cols)));
@@ -249,7 +250,13 @@
     state.detail = tagRows(detail.rows, tDetail);
     state.detailCols = detail.cols;
     state.notes = tNotes ? toObjects(byTab[tNotes] || []).rows.filter((n) => n.note) : [];
-    state.orders = ordersBehindSummary(toObjects(byTab[tOts] || []).rows, toObjects(byTab[tTat] || []).rows);
+    const ots = toObjects(byTab[tOts] || []);
+    const tat = toObjects(byTab[tTat] || []);
+    state.orders = ordersBehindSummary(ots.rows, tat.rows);
+    state.reports = {
+      ots: { tab: tOts, suffix: "OTS Report", rows: tagRows(ots.rows, tOts), cols: ots.cols, sort: { col: "", dir: 1 }, filters: {}, query: "" },
+      tat: { tab: tTat, suffix: "TAT Report", rows: tagRows(tat.rows, tTat), cols: tat.cols, sort: { col: "", dir: 1 }, filters: {}, query: "" },
+    };
     const person = toObjects(byTab[tPerson] || []);
     state.byPerson = tagRows(person.rows, tPerson);
     state.byPersonCols = person.cols;
@@ -1862,6 +1869,234 @@
   function renderHanger() { renderTat("page-hanger", state.hanger, state.hangerCols, "Hanger Day 3+ TAT"); }
   function renderUnion() { renderTat("page-union", state.union, state.unionCols, "Union Day 3+ TAT"); }
 
+  // ───────────────────────── OTS Report / TAT Report ─────────────────────────
+  // Same rows and columns as the Sheet, in the Sheet's order. Each heading
+  // sorts A→Z / Z→A and filters by value or by text, like the Sheet's filter.
+  // Rows are never changed here. A note goes into that row's Notes column.
+  function reportNumeric(col, rows) {
+    const vals = rows.map((r) => String(r[col] == null ? "" : r[col]).trim()).filter(Boolean);
+    return vals.length > 0 && vals.every((v) => num(v) !== null);
+  }
+  function reportValue(r, c) { return String(r[c] == null ? "" : r[c]); }
+  function reportFiltered(rep) {
+    const q = rep.query.trim().toLowerCase();
+    const active = Object.entries(rep.filters).filter(([, f]) => f && ((f.values && f.values.size) || (f.text && f.text.trim())));
+    return rep.rows.filter((r) => {
+      if (q && !rep.cols.some((c) => reportValue(r, c).toLowerCase().includes(q))) return false;
+      return active.every(([c, f]) => {
+        const v = reportValue(r, c);
+        if (f.values && f.values.size && !f.values.has(v)) return false;
+        if (f.text && f.text.trim() && !v.toLowerCase().includes(f.text.trim().toLowerCase())) return false;
+        return true;
+      });
+    });
+  }
+  function reportSorted(rep, rows) {
+    const col = rep.sort.col;
+    if (!col) return rows;
+    const numeric = reportNumeric(col, rep.rows);
+    const dir = rep.sort.dir || 1;
+    return rows.map((r, i) => ({ r, i })).sort((a, b) => compareHoldCells(a.r, b.r, col, numeric, dir) || (a.i - b.i)).map((x) => x.r);
+  }
+  function closeFilterMenu() {
+    const open = document.querySelector(".filter-menu");
+    if (open) open.remove();
+    document.removeEventListener("mousedown", closeFilterMenu._outside, true);
+  }
+  function openFilterMenu(anchor, rep, col, rerender) {
+    closeFilterMenu();
+    const f = rep.filters[col] || { values: new Set(), text: "" };
+    const counts = new Map();
+    rep.rows.forEach((r) => { const v = reportValue(r, col); counts.set(v, (counts.get(v) || 0) + 1); });
+    const numeric = reportNumeric(col, rep.rows);
+    const values = [...counts.keys()].sort((a, b) => {
+      if (numeric) return (num(a) || 0) - (num(b) || 0);
+      return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+    });
+    const menu = el(`<div class="filter-menu" role="dialog" aria-label="Filter ${esc(col)}">
+      <div class="fm-head"><b>${esc(col)}</b></div>
+      <div class="fm-sort">
+        <button type="button" class="linklike" data-dir="1">Sort A → Z</button>
+        <button type="button" class="linklike" data-dir="-1">Sort Z → A</button>
+        <button type="button" class="linklike" data-dir="0">Clear sort</button>
+      </div>
+      <label class="fm-label">Filter by text<input type="text" class="fm-text" placeholder="contains…"></label>
+      <div class="fm-label">Filter by values
+        <span class="fm-links"><button type="button" class="linklike fm-all">Select all</button> · <button type="button" class="linklike fm-none">Clear</button></span>
+      </div>
+      <input type="text" class="fm-search" placeholder="Search values">
+      <div class="fm-values"></div>
+      <div class="row"><button type="button" class="btn ghost fm-cancel">Cancel</button><button type="button" class="btn primary fm-ok">OK</button></div>
+    </div>`);
+    const textIn = menu.querySelector(".fm-text");
+    textIn.value = f.text || "";
+    const list = menu.querySelector(".fm-values");
+    const picked = new Set(f.values || []);
+    const everything = picked.size === 0;
+    const boxes = values.map((v) => {
+      const row = el(`<label class="fm-value"><input type="checkbox"> <span>${v === "" ? "<i>(blank)</i>" : esc(v)}</span> <span class="fm-count">${counts.get(v)}</span></label>`);
+      const cb = row.querySelector("input");
+      cb.checked = everything || picked.has(v);
+      cb.dataset.value = v;
+      list.appendChild(row);
+      return { row, cb, v };
+    });
+    menu.querySelector(".fm-search").addEventListener("input", (e) => {
+      const s = e.target.value.toLowerCase();
+      boxes.forEach((b) => { b.row.hidden = s && !b.v.toLowerCase().includes(s); });
+    });
+    menu.querySelector(".fm-all").onclick = () => boxes.forEach((b) => { if (!b.row.hidden) b.cb.checked = true; });
+    menu.querySelector(".fm-none").onclick = () => boxes.forEach((b) => { if (!b.row.hidden) b.cb.checked = false; });
+    menu.querySelectorAll(".fm-sort button").forEach((b) => {
+      b.onclick = () => {
+        const d = Number(b.dataset.dir);
+        rep.sort = d ? { col: col, dir: d } : { col: "", dir: 1 };
+        closeFilterMenu();
+        rerender();
+      };
+    });
+    menu.querySelector(".fm-cancel").onclick = closeFilterMenu;
+    menu.querySelector(".fm-ok").onclick = () => {
+      const chosen = boxes.filter((b) => b.cb.checked).map((b) => b.v);
+      const all = chosen.length === boxes.length;
+      rep.filters[col] = { values: all ? new Set() : new Set(chosen), text: textIn.value };
+      closeFilterMenu();
+      rerender();
+    };
+    menu.addEventListener("mousedown", (e) => e.stopPropagation());
+    document.body.appendChild(menu);
+    const rect = anchor.getBoundingClientRect();
+    const w = menu.offsetWidth || 280;
+    menu.style.top = Math.min(window.innerHeight - menu.offsetHeight - 8, rect.bottom + 4) + "px";
+    menu.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, rect.left)) + "px";
+    closeFilterMenu._outside = (e) => { if (!menu.contains(e.target)) closeFilterMenu(); };
+    setTimeout(() => document.addEventListener("mousedown", closeFilterMenu._outside, true), 0);
+    menu.querySelector(".fm-search").focus();
+  }
+  function renderReport(pageId, key) {
+    const host = $(pageId);
+    const rep = state.reports[key];
+    if (!host) return;
+    host.innerHTML = "";
+    if (!rep || !rep.cols.length) {
+      host.appendChild(el(`<div class="empty">No ${esc(rep ? rep.suffix : key)} tab in this Sheet.</div>`));
+      return;
+    }
+    const rerender = () => renderReport(pageId, key);
+    const cols = rep.cols.filter((c) => !isNoteHeader(c));
+    const shown = reportSorted(rep, reportFiltered(rep));
+    const activeFilters = Object.entries(rep.filters).filter(([, f]) => f && ((f.values && f.values.size) || (f.text && f.text.trim()))).map(([c]) => c);
+    const head = el(`<div class="page-head"><h2>${esc(rep.tab || rep.suffix)}</h2><span class="legend">${shown.length} of ${rep.rows.length} rows. Same columns as the Sheet. Click ▾ on a heading to sort or filter. Click the heading to sort.</span></div>`);
+    host.appendChild(head);
+    const bar = el(`<div class="report-bar"><input type="search" class="report-search" placeholder="Search every column"><span class="report-chips"></span><button type="button" class="linklike report-reset">Clear sort and filters</button></div>`);
+    const search = bar.querySelector(".report-search");
+    search.value = rep.query;
+    let timer = null;
+    search.addEventListener("input", () => {
+      rep.query = search.value;
+      clearTimeout(timer);
+      timer = setTimeout(() => { rerender(); const again = host.querySelector(".report-search"); if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); } }, 200);
+    });
+    const chips = bar.querySelector(".report-chips");
+    activeFilters.forEach((c) => {
+      const chip = el(`<button type="button" class="chip" title="Remove this filter">${esc(c)} ×</button>`);
+      chip.onclick = () => { delete rep.filters[c]; rerender(); };
+      chips.appendChild(chip);
+    });
+    if (rep.sort.col) {
+      const chip = el(`<button type="button" class="chip" title="Clear sort">Sorted by ${esc(rep.sort.col)} ${rep.sort.dir < 0 ? "Z → A" : "A → Z"} ×</button>`);
+      chip.onclick = () => { rep.sort = { col: "", dir: 1 }; rerender(); };
+      chips.appendChild(chip);
+    }
+    bar.querySelector(".report-reset").onclick = () => { rep.sort = { col: "", dir: 1 }; rep.filters = {}; rep.query = ""; rerender(); };
+    host.appendChild(bar);
+
+    const wbIndex = workbenchIndex();
+    const wrap = el(`<div class="grid-wrap"></div>`);
+    const table = document.createElement("table");
+    table.className = "grid report";
+    const thead = document.createElement("thead");
+    const hr = document.createElement("tr");
+    cols.forEach((c) => {
+      const th = document.createElement("th");
+      th.className = "report-head";
+      if (rep.sort.col === c) th.classList.add("sorted");
+      if (activeFilters.includes(c)) th.classList.add("filtered");
+      const label = el(`<button type="button" class="colhead-btn"><span>${esc(c)}</span><span class="mark">${rep.sort.col === c ? (rep.sort.dir < 0 ? "▼" : "▲") : ""}</span></button>`);
+      label.onclick = () => {
+        if (rep.sort.col === c) rep.sort.dir = -rep.sort.dir;
+        else rep.sort = { col: c, dir: 1 };
+        rerender();
+      };
+      const menuBtn = el(`<button type="button" class="filter-btn" title="Sort or filter ${esc(c)}" aria-label="Sort or filter ${esc(c)}">▾</button>`);
+      menuBtn.onclick = (e) => { e.stopPropagation(); openFilterMenu(menuBtn, rep, c, rerender); };
+      th.append(label, menuBtn);
+      hr.appendChild(th);
+    });
+    const noteTh = document.createElement("th");
+    noteTh.textContent = "Notes";
+    hr.appendChild(noteTh);
+    thead.appendChild(hr);
+    const tb = document.createElement("tbody");
+    const numericCols = new Set(cols.filter((c) => reportNumeric(c, rep.rows)));
+    shown.forEach((r) => {
+      const tr = document.createElement("tr");
+      cols.forEach((c) => {
+        const td = document.createElement("td");
+        const text = reportValue(r, c);
+        if (numericCols.has(c)) td.classList.add("num");
+        const wb = text && isPoCol(c) ? holdWorkbench(r, text, wbIndex) : "";
+        if (wb) {
+          const a = document.createElement("a");
+          a.href = `${CFG.WORKBENCH_BASE}/${encodeURIComponent(wb)}`;
+          a.target = "_blank";
+          a.rel = "noopener";
+          a.className = "po-link";
+          a.textContent = text;
+          a.title = "Open the workbench for " + text;
+          td.appendChild(a);
+        } else {
+          td.textContent = text;
+          if (text) td.title = text;
+        }
+        tr.appendChild(td);
+      });
+      const noteTd = document.createElement("td");
+      noteTd.className = "notecell";
+      const placeholder = "Note on " + (r.po_number || "this row");
+      const paint = () => {
+        const ns = notesOnRow(r, rep.cols);
+        fillNotes(noteTd, ns, paint, placeholder);
+        noteTd.classList.toggle("empty", !ns.length);
+      };
+      paint();
+      noteTd.addEventListener("click", (e) => {
+        if (e.target.closest(".note-editor, .linklike, .note-entry")) return;
+        showNoteEditor(noteTd, "", placeholder, paint, async (text) => {
+          await addRowNote(rep.tab, rep.cols, r, text);
+          toast("Note saved");
+          paint();
+        }, false);
+      });
+      tr.appendChild(noteTd);
+      tb.appendChild(tr);
+    });
+    if (!shown.length) {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.colSpan = cols.length + 1;
+      td.className = "empty-row";
+      td.textContent = "No rows match these filters.";
+      tr.appendChild(td);
+      tb.appendChild(tr);
+    }
+    table.append(thead, tb);
+    wrap.appendChild(table);
+    host.appendChild(wrap);
+  }
+  function renderOts() { renderReport("page-ots", "ots"); }
+  function renderTatReport() { renderReport("page-tat", "tat"); }
+
   // ───────────────────────── page 5: Company Volume Trends ─────────────────────────
   // The Sheet tab already has every week for every company. The table keeps
   // the present week and shows every column the Sheet has, with Orders as the
@@ -2497,7 +2732,10 @@
     document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b.dataset.page === p));
     $("page-summary").hidden = p !== "summary";
     $("page-delinquency").hidden = p !== "delinquency";
+    $("page-ots").hidden = p !== "ots";
+    $("page-tat").hidden = p !== "tat";
     $("page-people").hidden = p !== "people";
+    closeFilterMenu();
     $("page-holds").hidden = p !== "holds";
     $("page-hanger").hidden = p !== "hanger";
     $("page-union").hidden = p !== "union";
@@ -2526,7 +2764,7 @@
       $("gate").hidden = true; $("tabs").hidden = false;
       $("pack-title").textContent = state.title;
       $("user").textContent = state.user; $("signout").hidden = false;
-      renderSummary(); renderDelinquency(); renderPeople(); renderHolds(); renderHanger(); renderUnion(); renderVolume();
+      renderSummary(); renderDelinquency(); renderOts(); renderTatReport(); renderPeople(); renderHolds(); renderHanger(); renderUnion(); renderVolume();
       showPage(state.delinquency.length && !state.summary.length ? "delinquency" : "summary");
     } catch (e) {
       err.textContent = e.message; err.hidden = false;

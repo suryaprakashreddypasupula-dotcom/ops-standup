@@ -321,6 +321,49 @@ table.grid td.notecell { vertical-align: top; }
 #page-hanger tr.tat-5 td, #page-union tr.tat-5 td, .tat-key .tat-5 { background: #ffb74d; }
 #page-hanger tr.tat-over td, #page-union tr.tat-over td, .tat-key .tat-over { background: #ef9a9a; }
 
+/* OTS Report / TAT Report only. Sheet columns with sort + filter per heading. */
+#page-ots .grid-wrap, #page-tat .grid-wrap { overflow: auto; max-height: calc(100vh - var(--chrome) - 150px); }
+#page-ots table.grid, #page-tat table.grid { min-width: 0; width: max-content; }
+#page-ots a.po-link, #page-tat a.po-link { color: var(--link); font-weight: 600; text-decoration: none; }
+#page-ots a.po-link:hover, #page-tat a.po-link:hover { text-decoration: underline; }
+.report-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 10px; }
+.report-search { font: inherit; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; min-width: 240px; }
+.report-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  font: inherit; font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border);
+  background: var(--header-bg); color: var(--accent); cursor: pointer;
+}
+.chip:hover { background: #c5d4ee; }
+table.report th.report-head { padding: 0 4px 0 0; white-space: nowrap; }
+table.report th.report-head .colhead-btn {
+  font: inherit; font-weight: 700; background: none; border: 0; padding: 5px 4px 5px 8px; cursor: pointer; color: inherit;
+  display: inline-flex; align-items: center; gap: 4px;
+}
+table.report th.report-head .colhead-btn .mark { font-size: 10px; color: var(--accent); min-width: 10px; }
+table.report th.report-head .filter-btn {
+  font: inherit; font-size: 12px; background: none; border: 1px solid transparent; border-radius: 4px; padding: 0 4px;
+  cursor: pointer; color: var(--muted); line-height: 18px;
+}
+table.report th.report-head .filter-btn:hover { border-color: var(--border); background: #fff; color: var(--accent); }
+table.report th.report-head.filtered .filter-btn { color: #fff; background: var(--accent); }
+table.report th.report-head.sorted { background: #dbe6f6; }
+table.report td.empty-row { text-align: center; color: var(--muted); padding: 24px; }
+.filter-menu {
+  position: fixed; z-index: 60; width: 300px; max-height: 70vh; overflow: auto;
+  background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, .18); display: flex; flex-direction: column; gap: 8px; font-size: 13px;
+}
+.filter-menu .fm-head { font-size: 14px; }
+.filter-menu .fm-sort { display: flex; gap: 10px; flex-wrap: wrap; }
+.filter-menu .fm-label { display: flex; flex-direction: column; gap: 4px; font-weight: 600; color: var(--muted); font-size: 12px; }
+.filter-menu .fm-links { font-weight: 400; }
+.filter-menu input[type="text"] { font: inherit; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; width: 100%; }
+.filter-menu .fm-values { max-height: 240px; overflow: auto; border: 1px solid var(--border-soft); border-radius: 6px; padding: 4px 6px; }
+.filter-menu .fm-value { display: flex; align-items: center; gap: 6px; padding: 2px 0; cursor: pointer; }
+.filter-menu .fm-value span:first-of-type { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.filter-menu .fm-count { color: var(--muted); font-size: 11px; }
+.filter-menu .row { display: flex; gap: 6px; justify-content: flex-end; }
+
 /* Company Volume Trends only (page + its drawer content, all vol-* classes). */
 #page-volume .grid-wrap { overflow: auto; }
 #page-volume table.grid { min-width: 0; width: max-content; }
