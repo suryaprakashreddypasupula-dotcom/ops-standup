@@ -1042,6 +1042,34 @@
     });
   }
 
+  // Same person, two stations: the name stays on both cards. The open profile
+  // adds that day's insoles from every station, each in its own color, and
+  // compares the total with the open station's own target.
+  const STATION_COLOR_ORDER = ["Printing", "Gluing", "Finishing", "Add-on", "Quality Control", "QC", "Shipping", "Grinding", "Design", "Manufacturing", "Post-print QA", "Matching", "Awaiting Shipment"];
+  const STATION_COLORS = ["#1d4e89", "#2f7d4a", "#e07a3d", "#6b4c9a", "#0f766e", "#b45309", "#9f1239", "#3f6212"];
+
+  function stationColor(label) {
+    const i = STATION_COLOR_ORDER.indexOf(label);
+    return STATION_COLORS[(i < 0 ? STATION_COLORS.length - 1 : i) % STATION_COLORS.length];
+  }
+
+  function personDaySlices(board, person) {
+    const idx = person.days.length - 1;
+    const slices = [];
+    board.stations.forEach((st) => {
+      const match = st.people.find((p) => p.who.toLowerCase() === person.who.toLowerCase());
+      if (!match) return;
+      const q = match.days[idx] ? match.days[idx].qty : 0;
+      if (q > 0) slices.push({ label: st.label, qty: q });
+    });
+    slices.sort((a, b) => {
+      const ai = STATION_COLOR_ORDER.indexOf(a.label);
+      const bi = STATION_COLOR_ORDER.indexOf(b.label);
+      return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi) || a.label.localeCompare(b.label);
+    });
+    return slices;
+  }
+
   function renderPersonDetail(host, board, station, person) {
     const name = boardName(station.station, person.who);
     const qty = person.days[person.days.length - 1].qty;
@@ -1058,21 +1086,50 @@
     const perHour = hourlyUnits(station.station);
     if (perHour) {
       const target = perHour * WORK_HOURS;
-      const gap = qty - target;
+      const slices = personDaySlices(board, person);
+      const combined = slices.length > 1;
+      const total = combined ? slices.reduce((sum, s) => sum + s.qty, 0) : qty;
+      const gap = total - target;
       const met = gap >= 0;
-      const pct = Math.max(0, Math.min(100, Math.round((qty / target) * 100)));
       const card = el(`<div class="chart-card person-target"></div>`);
       card.appendChild(el(`<div class="chart-title">Units vs target · ${esc(board.day)}</div>`));
+      if (combined) {
+        const parts = slices.map((s) => s.qty + " " + s.label).join(" + ");
+        card.appendChild(el(`<p class="target-line"><b>${total}</b> units · ${esc(parts)}</p>`));
+        card.appendChild(el(`<p class="target-line">Target <b>${target}</b> · ${esc(station.label)}</p>`));
+      } else {
+        card.appendChild(el(`<p class="target-line"><b>${qty}</b> units · target <b>${target}</b></p>`));
+      }
       card.appendChild(el(
-        `<p class="target-line"><b>${qty}</b> units · target <b>${target}</b></p>`
+        `<p class="target-result ${met ? "met" : "short"}">${met ? "Met target" : "Short " + (target - total)}${met && gap > 0 ? " · " + gap + " over" : ""}</p>`
       ));
-      card.appendChild(el(
-        `<p class="target-result ${met ? "met" : "short"}">${met ? "Met target" : "Short " + (target - qty)}${met && gap > 0 ? " · " + gap + " over" : ""}</p>`
-      ));
-      const bar = el(`<div class="target-track" role="img" aria-label="${qty} of ${target} units"></div>`);
-      bar.appendChild(el(`<div class="target-fill ${met ? "met" : "short"}" style="width:${pct}%"></div>`));
+      const bar = el(`<div class="target-track${combined ? " split" : ""}" role="img" aria-label="${total} of ${target} units"></div>`);
+      if (combined) {
+        const scale = total > target ? target / total : 1;
+        slices.forEach((s) => {
+          const pct = Math.max(0, Math.min(100, (s.qty / target) * scale * 100));
+          const seg = el(`<div class="target-fill" style="width:${pct}%"></div>`);
+          seg.style.background = stationColor(s.label);
+          bar.appendChild(seg);
+        });
+      } else {
+        const pct = Math.max(0, Math.min(100, Math.round((qty / target) * 100)));
+        bar.appendChild(el(`<div class="target-fill ${met ? "met" : "short"}" style="width:${pct}%"></div>`));
+      }
       card.appendChild(bar);
-      card.appendChild(el(`<p class="muted small">${perHour} units an hour × ${WORK_HOURS} hours</p>`));
+      if (combined) {
+        const legend = el(`<p class="target-legend"></p>`);
+        slices.forEach((s) => {
+          const key = el(`<span class="target-key"><i class="swatch"></i>${esc(s.label)} ${s.qty}</span>`);
+          key.querySelector(".swatch").style.background = stationColor(s.label);
+          legend.appendChild(key);
+        });
+        card.appendChild(legend);
+        const listed = slices.map((s) => s.label).join(slices.length === 2 ? " and " : ", ");
+        card.appendChild(el(`<p class="muted small">${esc(listed)} counted together. Target stays ${esc(station.label)} · ${perHour} units an hour × ${WORK_HOURS} hours</p>`));
+      } else {
+        card.appendChild(el(`<p class="muted small">${perHour} units an hour × ${WORK_HOURS} hours</p>`));
+      }
       host.appendChild(card);
     }
 

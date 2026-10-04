@@ -69,6 +69,8 @@
       ["Form", "Production", "NEEDS_GLUING", "kept.worker+vmakena@example.com", 225, "", "", "", "", "", "", "", "8 (20m)", "", 8, 8, 2],
       ["Form", "Production", "NEEDS_GLUING", "eric@example.com", 225, "", "", "", "", "", "", "", "33 (1h)", "", 33, 33, 2],
       ["Form", "Production", "NEEDS_GLUING", "erica.stone@example.com", 225, "", "", "", "", "", "", "", "9 (20m)", "", 9, 9, 2],
+      ["Form", "Production", "NEEDS_GLUING", "nola.brooks@example.com", 225, "", "", "", "", "", "", "", "90 (3h)", "", 90, 90, 2],
+      ["Form", "Production", "NEEDS_FINISHING", "nola.brooks@example.com", 225, "", "", "", "", "", "", "", "60 (2h)", "", 60, 60, 2],
     ],
     [`${P} On Hold External Detail`]: [
       ["Factory", "PO Number", "Patient", "Language Preference", "Clinician", "Clinician Email", "Clinician Phone", "Company", "Held From", "Hold Kind", "Hold Reason", "Hold Placed On", "Days On Hold", "step_overdue_at", "authorization_date", "Placed By", "Placed By Email"],
