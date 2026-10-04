@@ -704,6 +704,17 @@
   // ───────────────────────── page 3: Prev Day by Person ─────────────────────────
   // Scoreboard only. Reads the Prev Day by Person tab already on the Sheet.
   // No orders, notes, or workbench. Ops Summary and Delinquency are not used here.
+  // Units per hour. A day is 7 hours of work (8 hours with a 1 hour break).
+  // The daily target is this rate times 7. Shown only on an open profile.
+  const HOURLY_UNITS = {
+    "PRINTING": 30,
+    "NEEDS_GLUING": 20,
+    "NEEDS_FINISHING": 25,
+    "NEEDS_ADDON": 15,
+    "NEEDS_QUALITY_CONTROL": 30,
+    "NEEDS_SHIPPING": 180,
+  };
+  const WORK_HOURS = 7;
   const STATION_LABELS = {
     "PRINTING": "Printing",
     "NEEDS_MANUFACTURING": "Manufacturing",
@@ -969,6 +980,27 @@
     const chart = el(`<div class="chart-card"><div class="chart-title">${esc(name)} · insoles by day</div><div class="chart-scroll"></div></div>`);
     chart.querySelector(".chart-scroll").appendChild(trendChart(person.days));
     host.appendChild(chart);
+
+    const perHour = HOURLY_UNITS[station.station];
+    if (perHour) {
+      const target = perHour * WORK_HOURS;
+      const gap = qty - target;
+      const met = gap >= 0;
+      const pct = Math.max(0, Math.min(100, Math.round((qty / target) * 100)));
+      const card = el(`<div class="chart-card person-target"></div>`);
+      card.appendChild(el(`<div class="chart-title">Units vs target · ${esc(board.day)}</div>`));
+      card.appendChild(el(
+        `<p class="target-line"><b>${qty}</b> units · target <b>${target}</b></p>`
+      ));
+      card.appendChild(el(
+        `<p class="target-result ${met ? "met" : "short"}">${met ? "Met target" : "Short " + (target - qty)}${met && gap > 0 ? " · " + gap + " over" : ""}</p>`
+      ));
+      const bar = el(`<div class="target-track" role="img" aria-label="${qty} of ${target} units"></div>`);
+      bar.appendChild(el(`<div class="target-fill ${met ? "met" : "short"}" style="width:${pct}%"></div>`));
+      card.appendChild(bar);
+      card.appendChild(el(`<p class="muted small">${perHour} units an hour × ${WORK_HOURS} hours</p>`));
+      host.appendChild(card);
+    }
 
     const noteCard = el(`<div class="chart-card person-note"><div class="chart-title">Note on ${esc(name)}</div><div class="po-notes"></div><div class="po-actions"></div></div>`);
     const notesEl = noteCard.querySelector(".po-notes");
