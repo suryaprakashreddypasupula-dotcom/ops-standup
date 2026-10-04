@@ -754,8 +754,8 @@
   }
 
   // These people stay on the Sheet. The scoreboard skips them.
-  // Match the mailbox owner (the text before +). A shared +vmakena tag on
-  // someone else's account is not Vmakena and stays on the board.
+  // yatesh.makena+james.burhans is James Burhans. Anyone else after that
+  // plus stays. A +vmakena tag on another mailbox is not Vmakena.
   const HIDDEN_NAMES = [
     "pedro sanchez",
     "eric",
@@ -764,17 +764,24 @@
     "suryaprakashreddy pasupula",
     "charles lussier",
     "varun addagulla",
+    "james burhans",
   ];
 
   function nameKey(s) {
     return String(s || "").toLowerCase().replace(/[._]+/g, " ").replace(/[^a-z0-9 +]/g, " ").replace(/\s+/g, " ").trim();
   }
 
-  function mailboxOwner(who) {
+  function personLocal(who) {
     let local = String(who || "").split("@")[0].trim();
     const plus = local.indexOf("+");
-    if (plus > 0) local = local.slice(0, plus);
-    return nameKey(local);
+    if (plus > 0 && nameKey(local.slice(0, plus)) === "yatesh makena") local = local.slice(plus + 1);
+    else if (plus > 0) local = local.slice(0, plus);
+    else if (plus === 0) local = local.slice(1);
+    return local;
+  }
+
+  function mailboxOwner(who) {
+    return nameKey(personLocal(who));
   }
 
   function isHiddenPerson(who) {
@@ -782,7 +789,7 @@
     if (!owner) return false;
     const squashed = owner.replace(/ /g, "");
     if (HIDDEN_NAMES.some((name) => owner === name || squashed === name.replace(/ /g, ""))) return true;
-    return owner === "vmakena" || owner.startsWith("vmakena ");
+    return owner === "vmakena" || owner.startsWith("vmakena ") || owner === "yatesh makena";
   }
 
   function isUnknownPerson(who) {
@@ -800,11 +807,7 @@
   }
 
   function displayName(who) {
-    let local = String(who || "").split("@")[0].trim();
-    const plus = local.indexOf("+");
-    if (plus > 0) local = local.slice(0, plus);
-    else if (plus === 0) local = local.slice(1);
-    local = local.replace(/[._]+/g, " ").trim();
+    let local = personLocal(who).replace(/[._]+/g, " ").trim();
     if (!local) return "Unknown";
     return local.replace(/\b[a-z]/g, (c) => c.toUpperCase());
   }
