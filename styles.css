@@ -243,12 +243,58 @@ table.grid tr.factory-start td { border-top: 2px solid var(--border); }
 #page-holds tr.open td.sticky { background: #fff; }
 #page-holds tr.hold-rest td { border-top: 2px solid var(--border); }
 
-/* Company Volume Trends only. */
+/* On Hold External: PO link inside the pinned cell. */
+#page-holds a.po-link { color: var(--link); font-weight: 600; text-decoration: none; }
+#page-holds a.po-link:hover { text-decoration: underline; }
+
+/* Company Volume Trends only (page + its drawer content, all vol-* classes). */
 #page-volume .grid-wrap { overflow: auto; }
 #page-volume table.grid { min-width: 0; width: max-content; }
 #page-volume td.num { font-variant-numeric: tabular-nums; }
 #page-volume td.up { color: #1b7f4a; font-weight: 700; }
 #page-volume td.down { color: var(--danger); font-weight: 700; }
-#page-volume .pill.grow { background: var(--ok-bg); color: #1b7f4a; }
-#page-volume .pill.slow { background: #fde8e8; color: var(--danger); }
-#page-volume .pill.steady { background: #eef1f6; color: var(--muted); }
+#page-volume th.vol-main { background: #c5d4ee; }
+#page-volume td.vol-main { font-weight: 700; }
+.pill.grow { background: var(--ok-bg); color: #1b7f4a; }
+.pill.slow { background: #fde8e8; color: var(--danger); }
+.pill.steady { background: #eef1f6; color: var(--muted); }
+.vol-overview { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 12px; }
+.vol-card {
+  background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px;
+  min-width: 190px; text-align: left; font: inherit; color: inherit;
+}
+.vol-card.clickable { cursor: pointer; }
+.vol-card.clickable:hover, .vol-card.clickable:focus-visible { border-color: var(--accent); background: var(--hover); outline: none; }
+.vol-card .k, .vol-stat .k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+.vol-card .v { font-size: 26px; font-weight: 700; margin-top: 4px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.vol-card .d { margin-top: 6px; font-size: 12px; }
+.vol-up { color: #1b7f4a; }
+.vol-down { color: var(--danger); }
+.vol-flat { color: var(--muted); }
+.vol-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.vol-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 6px; }
+.vol-stat { border: 1px solid var(--border-soft); border-radius: 8px; padding: 8px 10px; background: #fff; }
+.vol-stat .v { font-size: 20px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.vol-read { margin: 0 0 6px; padding: 0 0 0 18px; }
+.vol-read li { margin: 3px 0; }
+.vol-chart { display: block; }
+.vol-grid { stroke: var(--border-soft); stroke-width: 1; }
+.vol-bar { fill: #305496; }
+.vol-bar.current { fill: #1b7f4a; }
+.vol-bar.forecast { fill: #f3f6fb; stroke: #9aa6b2; stroke-dasharray: 4 3; stroke-width: 1.5; }
+.vol-trend { stroke: #e07b00; stroke-width: 2; fill: none; }
+.vol-key { margin: 6px 0 4px; }
+.vol-key .sw { display: inline-block; width: 12px; height: 10px; border-radius: 2px; vertical-align: middle; margin-right: 4px; }
+.vol-key .sw.cur { background: #1b7f4a; }
+.vol-key .sw.bar { background: #305496; }
+.vol-key .sw.fc { background: #f3f6fb; border: 1.5px dashed #9aa6b2; }
+.vol-key .sw.tr { height: 2px; background: #e07b00; }
+.vol-table { border-collapse: collapse; width: 100%; background: #fff; border: 1px solid var(--border-soft); border-radius: 8px; }
+.vol-table th, .vol-table td { padding: 5px 8px; border-bottom: 1px solid var(--border-soft); text-align: left; white-space: nowrap; }
+.vol-table th { background: var(--header-bg); font-weight: 700; }
+.vol-table th.num, .vol-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.vol-table tr:last-child td { border-bottom: 0; }
+.vol-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 6px 14px; }
+.vol-row .kv { display: flex; flex-direction: column; }
+.vol-row .k { color: var(--muted); font-size: 11px; }
+.vol-row .v { font-weight: 600; }

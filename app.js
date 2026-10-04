@@ -6,8 +6,11 @@
  *   page 2  Delinquency by Station — same columns as the Sheet; every number
  *           opens the POs behind it (from the "Delinquency Detail" tab), each PO
  *           links to its workbench, and notes can be written per PO or per row.
+ *   page 4  On Hold External       — same columns as the Sheet; a PO opens its
+ *           workbench when the id is known from this Sheet.
  *   page 5  Company Volume Trends  — the present week only, from the tab that
- *           already has every week. Outlook is a first read of growth.
+ *           already has every week. A company opens its history, trend,
+ *           next-week read and month totals.
  * Notes are appended to the "Notes" tab of the SAME Sheet, so they belong to
  * that night's pack only. Nothing is stored on this site or in this repo.
  */
@@ -1084,10 +1087,30 @@
     handle.addEventListener("click", (e) => e.stopPropagation());
     handle.addEventListener("dragstart", (e) => e.preventDefault());
   }
+  // PO Number → workbench. The Hold tab has no workbench_id of its own, so the
+  // id comes from a workbench column if one exists, else from the same PO on
+  // Delinquency Detail / OTS / TAT in this Sheet. POs found nowhere stay text.
+  function isPoCol(col) { return /^po[ _]?(number|num|no)?$/i.test(String(col || "").trim()); }
+  function workbenchIndex() {
+    const map = new Map();
+    const put = (po, wb) => {
+      const k = String(po || "").trim().toLowerCase();
+      if (k && wb && !map.has(k)) map.set(k, String(wb).trim());
+    };
+    state.detail.forEach((d) => put(d.po_number, d.workbench_id));
+    state.orders.forEach((o) => put(o.po_number, o.workbench_id));
+    return map;
+  }
+  function holdWorkbench(row, po, index) {
+    const own = Object.keys(row).find((c) => /workbench/i.test(c) && String(row[c] || "").trim());
+    if (own) return String(row[own]).trim();
+    return index.get(String(po || "").trim().toLowerCase()) || "";
+  }
   function renderHolds() {
     const host = $("page-holds");
     if (!host) return;
     host.innerHTML = "";
+    const wbIndex = workbenchIndex();
     if (!state.holdCols.length) {
       host.appendChild(el(`<div class="empty">No On Hold External Detail tab in this Sheet.</div>`));
       return;
@@ -1098,7 +1121,7 @@
     const rest = rows.length - manual;
     const head = el(
       `<div class="page-head"><h2>${esc(findTab("On Hold External Detail") || "On Hold External Detail")}</h2>`
-      + `<span class="legend">${manual} manual on top · ${rest} below. Drag ⋮⋮ to move a column. Drag an edge to resize. Drag the header bottom for row height. Click a heading to sort. Click a row to read it.</span></div>`
+      + `<span class="legend">${manual} manual on top · ${rest} below. Click a PO to open its workbench. Drag ⋮⋮ to move a column. Drag an edge to resize. Drag the header bottom for row height. Click a heading to sort. Click a row to read it.</span></div>`
     );
     const reset = el(`<button type="button" class="linklike">Reset layout</button>`);
     reset.onclick = () => {
@@ -1225,8 +1248,21 @@
         const text = v == null ? "" : String(v);
         if (c === "PO Number") td.classList.add("sticky");
         if (columnIsNumeric(c, state.holds) && num(v) !== null) td.classList.add("num");
-        td.textContent = text;
-        if (text) td.title = text;
+        const wb = text && isPoCol(c) ? holdWorkbench(r, text, wbIndex) : "";
+        if (wb) {
+          const a = document.createElement("a");
+          a.href = `${CFG.WORKBENCH_BASE}/${encodeURIComponent(wb)}`;
+          a.target = "_blank";
+          a.rel = "noopener";
+          a.className = "po-link";
+          a.textContent = text;
+          a.title = "Open the workbench for " + text;
+          a.addEventListener("click", (e) => e.stopPropagation());
+          td.appendChild(a);
+        } else {
+          td.textContent = text;
+          if (text) td.title = isPoCol(c) ? text + " — no workbench id on this Sheet" : text;
+        }
         tr.appendChild(td);
       });
       tb.appendChild(tr);
@@ -1237,16 +1273,16 @@
   }
 
   // ───────────────────────── page 5: Company Volume Trends ─────────────────────────
-  // The Sheet tab already has every week. This page keeps the week that
-  // contains the pack date (10_3 → the week of 10/3) and shows the volume
-  // columns that are already on that tab. Outlook is only a first read of
-  // growth so the companies that are rising sit at the top.
+  // The Sheet tab already has every week for every company. The table keeps
+  // the present week and shows every column the Sheet has, with Orders as the
+  // main number. Clicking a company opens its history: orders by week, the
+  // fitted trend, a next-week read, and month totals. Nothing is written back.
   function volumeHeaderKey(col) {
     return String(col || "").toLowerCase().replace(/[_%]+/g, " ").replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
   }
   function metricNum(v) {
     const s = String(v == null ? "" : v).trim().replace(/,/g, "");
-    if (!s || looksLikeWeekLabel(s)) return null;
+    if (!s) return null;
     const m = s.match(/^([+-]?\d+(?:\.\d+)?)\s*%?$/);
     return m ? Number(m[1]) : null;
   }
@@ -1256,7 +1292,7 @@
     if (/\d{4}\s*[- ]?w\d{1,2}/i.test(s)) return true;
     if (/^\d{4}-\d{2}-\d{2}/.test(s)) return true;
     if (/^\d{1,2}\/\d{1,2}(\/\d{2,4})?$/.test(s)) return true;
-    if (/week of/i.test(s)) return true;
+    if (/week/i.test(s)) return true;
     return false;
   }
   function columnShare(col, rows, pred) {
@@ -1275,24 +1311,26 @@
     }
     return new Date(Date.UTC(chicagoYear(md.month), md.month - 1, md.day));
   }
-  function reportWeekWindow(report) {
-    const monday = new Date(report.getTime());
+  function mondayOf(date) {
+    const monday = new Date(date.getTime());
     const day = monday.getUTCDay();
     monday.setUTCDate(monday.getUTCDate() + (day === 0 ? -6 : 1 - day));
+    return monday;
+  }
+  function reportWeekWindow(report) {
+    const monday = mondayOf(report);
     const start = new Date(monday.getTime());
     start.setUTCDate(start.getUTCDate() - 1);
     const end = new Date(monday.getTime());
     end.setUTCDate(end.getUTCDate() + 6);
     return { monday: monday, start: start, end: end };
   }
+  function addDays(d, n) { const x = new Date(d.getTime()); x.setUTCDate(x.getUTCDate() + n); return x; }
   function formatMD(d) { return (d.getUTCMonth() + 1) + "/" + d.getUTCDate(); }
-  function isoWeekParts(date) {
-    const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-    const day = d.getUTCDay() || 7;
-    d.setUTCDate(d.getUTCDate() + 4 - day);
-    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-    const week = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
-    return { year: d.getUTCFullYear(), week: week };
+  function isoWeekMonday(year, week) {
+    const jan4 = new Date(Date.UTC(year, 0, 4));
+    const day = jan4.getUTCDay() || 7;
+    return addDays(jan4, (1 - day) + (week - 1) * 7);
   }
   function parseLooseDate(v, report) {
     const s = String(v || "").trim();
@@ -1304,26 +1342,36 @@
       if (y < 100) y += 2000;
       return new Date(Date.UTC(y, Number(m[1]) - 1, Number(m[2])));
     }
-    m = s.match(/(\d{1,2})\/(\d{1,2})\b/);
+    m = s.match(/^(\d{1,2})\/(\d{1,2})\b/);
     if (m && report) return new Date(Date.UTC(report.getUTCFullYear(), Number(m[1]) - 1, Number(m[2])));
+    m = s.match(/^([A-Za-z]{3,9})\s+(\d{1,2})(?:,?\s*(\d{4}))?$/);
+    if (m) {
+      const t = Date.parse(m[1] + " " + m[2] + ", " + (m[3] || (report ? report.getUTCFullYear() : new Date().getUTCFullYear())) + " UTC");
+      if (!isNaN(t)) return new Date(t);
+    }
     return null;
   }
-  function weekCellInReportWeek(value, report) {
-    const s = String(value || "").trim();
+  // A Week cell → a sortable key plus (when the cell is a date) the Monday it
+  // stands for. Week numbers with no date still sort, so the latest one wins.
+  function weekOf(value, report) {
+    const s = String(value == null ? "" : value).trim();
+    if (!s) return null;
     const iso = s.match(/(\d{4})\s*[- ]?\s*w(\d{1,2})/i);
     if (iso) {
-      const got = isoWeekParts(report);
-      return Number(iso[1]) === got.year && Number(iso[2]) === got.week;
+      const d = isoWeekMonday(Number(iso[1]), Number(iso[2]));
+      return { key: d.getTime(), date: d, label: s };
     }
-    const parsed = parseLooseDate(s, report);
-    if (!parsed) return false;
-    const win = reportWeekWindow(report);
-    return parsed >= win.start && parsed <= win.end;
+    const d = parseLooseDate(s, report);
+    if (d) return { key: mondayOf(d).getTime(), date: mondayOf(d), label: s };
+    const n = s.match(/(\d+(?:\.\d+)?)/);
+    if (n) return { key: Number(n[1]), date: null, label: s };
+    return null;
   }
-  function assignVolumeCols(cols, rows) {
+  function assignVolumeCols(cols, rows, report) {
     const byKey = new Map();
     cols.forEach((c) => { const k = volumeHeaderKey(c); if (!byKey.has(k)) byKey.set(k, c); });
     const used = new Set();
+    const share = (c, pred) => columnShare(c, rows, pred);
     function take(names) {
       for (let i = 0; i < names.length; i++) {
         const c = byKey.get(names[i]);
@@ -1331,65 +1379,376 @@
       }
       return "";
     }
-    let week = take(["week start", "week of", "week ending", "report week", "week label", "week start date"]);
-    let current = take(["week volume", "week orders", "this week", "current week", "orders this week", "orders", "volume", "order count", "insoles", "qty"]);
-    const prev = take(["prev week", "previous week", "prior week", "last week", "prev week orders", "previous week orders"]);
-    const wow = take(["wow change", "wow changes", "wow", "week over week", "wow pct"]);
-    const recent = take(["recent 4 weeks", "recent 4 week", "last 4 weeks", "trailing 4 weeks"]);
-    const prior = take(["prior 4 weeks", "prior 4 week", "previous 4 weeks", "prior four weeks"]);
-    const growth = take(["growth", "growth pct", "volume growth"]);
-    const weekNamed = byKey.get("week");
-    if (weekNamed && !used.has(weekNamed)) {
-      const asWeeks = columnShare(weekNamed, rows, looksLikeWeekLabel);
-      const asNums = columnShare(weekNamed, rows, (v) => metricNum(v) !== null);
-      if (asWeeks >= 0.6 || asWeeks >= asNums) { week = weekNamed; used.add(weekNamed); }
-      else if (!current) { current = weekNamed; used.add(weekNamed); }
-    }
+    let week = take(["week", "week start", "week of", "week ending", "report week", "week label", "week start date", "wk", "week beginning"]);
+    if (week && share(week, (v) => weekOf(v, report) !== null) < 0.5) { used.delete(week); week = ""; }
     if (!week) {
-      const candidate = cols.find((c) => !used.has(c) && columnShare(c, rows, looksLikeWeekLabel) >= 0.6);
-      if (candidate) { week = candidate; used.add(candidate); }
+      const cand = cols.find((c) => !used.has(c) && share(c, looksLikeWeekLabel) >= 0.6);
+      if (cand) { week = cand; used.add(cand); }
     }
-    return { week: week, current: current, prev: prev, wow: wow, recent: recent, prior: prior, growth: growth };
+    let company = take(["company", "company name", "clinic", "clinic name", "account", "account name", "customer", "customer name", "client", "practice", "name"]);
+    if (!company) {
+      company = cols.find((c) => !used.has(c) && share(c, (v) => metricNum(v) === null && !looksLikeWeekLabel(v)) >= 0.8) || "";
+      if (company) used.add(company);
+    }
+    const prev = take(["prev week", "previous week", "prior week", "last week", "prev week orders", "previous week orders", "prev"]);
+    const wow = take(["wow change", "wow changes", "wow", "week over week", "wow pct", "wow change pct"]);
+    const recent = take(["recent 4 weeks", "recent 4 week", "recent 4 wks", "last 4 weeks", "trailing 4 weeks", "recent 4"]);
+    const prior = take(["prior 4 weeks", "prior 4 week", "prior 4 wks", "previous 4 weeks", "prior four weeks", "prior 4"]);
+    const growth = take(["growth", "growth pct", "volume growth", "4 week growth", "4wk growth"]);
+    let orders = take(["orders", "order count", "orders this week", "week orders", "this week", "this week orders", "current week", "week volume", "volume", "insoles", "qty", "count", "total orders", "total"]);
+    if (!orders) {
+      orders = cols.find((c) => !used.has(c) && share(c, (v) => metricNum(v) !== null) >= 0.8) || "";
+      if (orders) used.add(orders);
+    }
+    return { week: week, company: company, orders: orders, prev: prev, wow: wow, recent: recent, prior: prior, growth: growth };
   }
-  function volumeDisplayCols(cols, picked) {
-    const metrics = [picked.current, picked.prev, picked.wow, picked.recent, picked.prior, picked.growth].filter(Boolean);
-    const skip = new Set(metrics);
-    if (picked.week) skip.add(picked.week);
-    const idFirst = [];
-    const rest = [];
-    cols.forEach((c) => {
-      if (skip.has(c)) return;
-      if (/company|clinic|account|customer|factory/.test(volumeHeaderKey(c))) idFirst.push(c);
-      else rest.push(c);
+  // Everything the page and the drawer need, computed once per render.
+  function volumeModel() {
+    const report = reportDateUtc();
+    const picked = assignVolumeCols(state.volumeCols, state.volume, report);
+    const rowWeek = new Map();
+    const weeksByKey = new Map();
+    state.volume.forEach((r) => {
+      const w = picked.week ? weekOf(r[picked.week], report) : null;
+      if (!w) return;
+      rowWeek.set(r, w.key);
+      if (!weeksByKey.has(w.key)) weeksByKey.set(w.key, w);
     });
-    const out = idFirst.slice();
-    if (picked.week) out.push(picked.week);
-    rest.forEach((c) => out.push(c));
-    metrics.forEach((c) => out.push(c));
+    let weeks = [...weeksByKey.values()].sort((a, b) => a.key - b.key);
+    let current = null;
+    if (weeks.length) {
+      const win = reportWeekWindow(report);
+      const inWin = weeks.filter((w) => w.date && w.date >= win.start && w.date <= win.end);
+      const before = weeks.filter((w) => w.date && w.date <= report);
+      current = inWin.length ? inWin[inWin.length - 1] : before.length ? before[before.length - 1] : weeks[weeks.length - 1];
+      // Rows for weeks after the present one stay on the Sheet and out of
+      // every history, chart and month total here.
+      weeks = weeks.filter((w) => w.key <= current.key);
+    }
+    const idx = current ? weeks.indexOf(current) : -1;
+    const prevWeek = idx > 0 ? weeks[idx - 1] : null;
+    const companyOf = (r) => String(picked.company ? r[picked.company] : "").trim();
+    const ordersOf = (r) => { const n = picked.orders ? metricNum(r[picked.orders]) : null; return n == null ? 0 : n; };
+    const rowsForWeek = (w) => (w ? state.volume.filter((r) => rowWeek.get(r) === w.key) : state.volume.slice());
+    // Business days of the present week already in the pack. The pack is built
+    // overnight, so a 9/29 pack carries orders through Monday 9/28.
+    let bdIn = 5;
+    let through = null;
+    if (current && current.date) {
+      through = addDays(report, -1);
+      const end = addDays(current.date, 4);
+      if (through >= end) bdIn = 5;
+      else if (through < current.date) bdIn = 0;
+      else bdIn = Math.min(5, Math.max(0, Math.floor((through - current.date) / 86400000) + 1));
+    }
+    return { report: report, picked: picked, weeks: weeks, current: current, prevWeek: prevWeek, rowWeek: rowWeek, companyOf: companyOf, ordersOf: ordersOf, rowsForWeek: rowsForWeek, bdIn: bdIn, through: through };
+  }
+  function volumeHistory(model, company) {
+    return model.weeks.map((w) => {
+      let orders = 0;
+      let rows = 0;
+      state.volume.forEach((r) => {
+        if (model.rowWeek.get(r) !== w.key) return;
+        if (company != null && model.companyOf(r) !== company) return;
+        orders += model.ordersOf(r);
+        rows += 1;
+      });
+      return { key: w.key, date: w.date, label: w.label, orders: orders, rows: rows, current: model.current && w.key === model.current.key };
+    }).filter((h) => h.rows > 0 || h.current);
+  }
+  function linearFit(ys) {
+    const n = ys.length;
+    if (n < 2) return { slope: 0, intercept: ys[0] || 0 };
+    let sx = 0, sy = 0, sxx = 0, sxy = 0;
+    ys.forEach((y, x) => { sx += x; sy += y; sxx += x * x; sxy += x * y; });
+    const den = n * sxx - sx * sx;
+    const slope = den ? (n * sxy - sx * sy) / den : 0;
+    return { slope: slope, intercept: (sy - slope * sx) / n };
+  }
+  function pctChange(now, before) {
+    if (before == null || now == null || !before) return null;
+    return (now - before) / before * 100;
+  }
+  function fmtPct(p, digits) {
+    if (p == null || !isFinite(p)) return "—";
+    const d = digits == null ? 1 : digits;
+    return (p > 0 ? "+" : "") + p.toFixed(d) + "%";
+  }
+  function fmtInt(n) { return n == null ? "—" : Math.round(n).toLocaleString("en-US"); }
+  function signClass(n) { return n > 0 ? "vol-up" : n < 0 ? "vol-down" : "vol-flat"; }
+  function weekLabelOf(w) { return w ? (w.date ? "week of " + formatMD(w.date) : w.label) : ""; }
+  function sum(arr) { return arr.reduce((a, b) => a + b, 0); }
+  // The numbers the drawer leads with. A single Sheet row keeps the Sheet's own
+  // Prev Week / WoW / 4-week values. Several rows (or All companies) are summed
+  // from Orders so every company is measured the same way.
+  function volumeStats(model, hist, sheetRows) {
+    const n = hist.length;
+    const cur = hist.findIndex((h) => h.current);
+    const i = cur >= 0 ? cur : n - 1;
+    const thisWeek = i >= 0 ? hist[i].orders : 0;
+    const prevWeek = i > 0 ? hist[i - 1].orders : null;
+    const recent4 = i >= 0 ? sum(hist.slice(Math.max(0, i - 3), i + 1).map((h) => h.orders)) : null;
+    const prior4 = i >= 4 ? sum(hist.slice(Math.max(0, i - 7), i - 3).map((h) => h.orders)) : null;
+    const out = {
+      thisWeek: thisWeek, prevWeek: prevWeek, wow: pctChange(thisWeek, prevWeek),
+      recent4: recent4, prior4: prior4, growth: pctChange(recent4, prior4), fromSheet: false,
+    };
+    const p = model.picked;
+    if (sheetRows.length === 1) {
+      const r = sheetRows[0];
+      const pick = (col, fallback) => { const v = col ? metricNum(r[col]) : null; return v == null ? fallback : v; };
+      out.thisWeek = pick(p.orders, thisWeek);
+      out.prevWeek = pick(p.prev, prevWeek);
+      out.wow = p.wow && metricNum(r[p.wow]) != null ? metricNum(r[p.wow]) : pctChange(out.thisWeek, out.prevWeek);
+      out.recent4 = pick(p.recent, recent4);
+      out.prior4 = pick(p.prior, prior4);
+      out.growth = p.growth && metricNum(r[p.growth]) != null ? metricNum(r[p.growth]) : pctChange(out.recent4, out.prior4);
+      out.fromSheet = true;
+    }
+    // Trend over the last 8 weeks and the read for next week.
+    const tail = hist.slice(Math.max(0, i - 7), i + 1).map((h) => h.orders);
+    const fit = linearFit(tail);
+    out.slope = tail.length >= 3 ? fit.slope : 0;
+    out.forecast = tail.length >= 3 ? Math.max(0, Math.round(fit.intercept + fit.slope * tail.length)) : null;
+    out.fitStart = Math.max(0, i - 7);
+    out.fit = fit;
+    out.avg = n ? sum(hist.map((h) => h.orders)) / n : 0;
+    const best = hist.reduce((b, h) => (!b || h.orders > b.orders ? h : b), null);
+    out.best = best;
+    let streak = 0;
+    for (let k = i; k > 0; k--) {
+      const d = hist[k].orders - hist[k - 1].orders;
+      if (!d) break;
+      if (streak === 0) streak = d > 0 ? 1 : -1;
+      else if ((streak > 0) === (d > 0)) streak += d > 0 ? 1 : -1;
+      else break;
+    }
+    out.streak = streak;
+    let upOf4 = 0, cmp4 = 0;
+    for (let k = Math.max(1, i - 3); k <= i; k++) { cmp4 += 1; if (hist[k].orders > hist[k - 1].orders) upOf4 += 1; }
+    out.upOf4 = upOf4; out.cmp4 = cmp4;
+    // Pace needs at least two business days in; one day is too thin to scale.
+    out.pace = model.bdIn >= 2 && model.bdIn < 5 && model.current && model.current.date ? Math.round(out.thisWeek / model.bdIn * 5) : null;
     return out;
   }
-  function volumeOutlook(row, picked) {
-    const g = picked.growth ? metricNum(row[picked.growth]) : null;
-    const recent = picked.recent ? metricNum(row[picked.recent]) : null;
-    const prior = picked.prior ? metricNum(row[picked.prior]) : null;
-    const wow = picked.wow ? metricNum(row[picked.wow]) : null;
-    const fourUp = recent != null && prior != null && recent > prior;
-    const fourDown = recent != null && prior != null && recent < prior;
+  // Growth inside ±5% is noise, so it reads Steady. Beyond that, the 8-week
+  // slope says whether the move is a trend or a one-week bump.
+  const STEADY_BAND = 5;
+  function volumeOutlook(stats) {
+    const g = stats.growth;
+    const wow = stats.wow;
+    const up = stats.slope > 0;
+    const down = stats.slope < 0;
     if (g != null) {
-      if (g > 0 && fourUp) return { kind: "grow", text: "Likely to grow" };
-      if (g > 0) return { kind: "grow", text: "Up this week" };
-      if (g < 0 && fourDown) return { kind: "slow", text: "Likely to slow" };
-      if (g < 0) return { kind: "slow", text: "Down this week" };
-      return { kind: "steady", text: "Steady" };
+      if (Math.abs(g) < STEADY_BAND) return { kind: "steady", text: "Steady" };
+      if (g > 0 && up) return { kind: "grow", text: "Likely to grow" };
+      if (g > 0) return { kind: "grow", text: "Up, trend flat" };
+      if (g < 0 && down) return { kind: "slow", text: "Likely to slow" };
+      return { kind: "slow", text: "Down, trend holding" };
     }
     if (wow != null) {
-      if (wow > 0 && fourUp) return { kind: "grow", text: "Likely to grow" };
+      if (Math.abs(wow) < STEADY_BAND) return { kind: "steady", text: "Steady" };
+      if (wow > 0 && up) return { kind: "grow", text: "Likely to grow" };
       if (wow > 0) return { kind: "grow", text: "Up this week" };
-      if (wow < 0 && fourDown) return { kind: "slow", text: "Likely to slow" };
-      if (wow < 0) return { kind: "slow", text: "Down this week" };
-      return { kind: "steady", text: "Steady" };
+      if (wow < 0 && down) return { kind: "slow", text: "Likely to slow" };
+      return { kind: "slow", text: "Down this week" };
     }
-    return { kind: "", text: "" };
+    return { kind: "steady", text: "No history yet" };
+  }
+  function monthTotals(hist) {
+    if (!hist.some((h) => h.date)) return [];
+    const byMonth = new Map();
+    hist.forEach((h) => {
+      if (!h.date) return;
+      const k = h.date.getUTCFullYear() * 100 + h.date.getUTCMonth();
+      let m = byMonth.get(k);
+      if (!m) {
+        m = { key: k, label: h.date.toLocaleString("en-US", { month: "short", year: "numeric", timeZone: "UTC" }), orders: 0, weeks: 0, partial: false };
+        byMonth.set(k, m);
+      }
+      m.orders += h.orders; m.weeks += 1;
+      if (h.current) m.partial = true;
+    });
+    const months = [...byMonth.values()].sort((a, b) => a.key - b.key);
+    // Months compare on orders per week, so a month with one week on the
+    // Sheet (or the month still running) is not read against a full one.
+    months.forEach((m) => { m.perWeek = m.weeks ? m.orders / m.weeks : 0; });
+    months.forEach((m, i) => { m.change = i > 0 ? pctChange(m.perWeek, months[i - 1].perWeek) : null; });
+    return months;
+  }
+  function volumeChart(hist, stats) {
+    const n = hist.length;
+    const hasForecast = stats.forecast != null;
+    const barW = n > 30 ? 12 : n > 18 ? 18 : 28;
+    const gap = n > 30 ? 4 : 8;
+    const left = 40, top = 28, plotH = 170, bottom = 40;
+    const slots = n + (hasForecast ? 1 : 0);
+    const width = left + slots * (barW + gap) + 16;
+    const height = top + plotH + bottom;
+    const max = Math.max(1, Math.max.apply(null, hist.map((h) => h.orders).concat([stats.forecast || 0])));
+    const svg = svgEl("svg", { class: "vol-chart", viewBox: "0 0 " + width + " " + height, width: width, height: height, role: "img" });
+    svg.appendChild(svgEl("title", {})).textContent = "Orders by week";
+    const baseline = top + plotH;
+    const yOf = (v) => baseline - Math.round((v / max) * (plotH - 10));
+    const xOf = (i) => left + i * (barW + gap);
+    [0, 0.5, 1].forEach((f) => {
+      const y = yOf(max * f);
+      svg.appendChild(svgEl("line", { x1: left - 4, y1: y, x2: width - 8, y2: y, class: f ? "vol-grid" : "trend-base" }));
+      const t = svgEl("text", { x: left - 8, y: y + 4, class: "bar-time", "text-anchor": "end" });
+      t.textContent = String(Math.round(max * f));
+      svg.appendChild(t);
+    });
+    const every = Math.max(1, Math.ceil(n / 10));
+    hist.forEach((h, i) => {
+      const x = xOf(i);
+      const y = yOf(h.orders);
+      svg.appendChild(svgEl("rect", { x: x, y: y, width: barW, height: Math.max(baseline - y, h.orders ? 2 : 0), rx: 3, class: "vol-bar" + (h.current ? " current" : "") }));
+      if (n <= 20 || h.current || h === stats.best) {
+        const t = svgEl("text", { x: x + barW / 2, y: Math.max(14, y - 6), class: "bar-time", "text-anchor": "middle", stroke: "#fff", "stroke-width": "3", "paint-order": "stroke" });
+        t.textContent = String(h.orders);
+        svg.appendChild(t);
+      }
+      if (i % every === 0 || h.current || i === n - 1) {
+        const d = svgEl("text", { x: x + barW / 2, y: baseline + 16, class: "bar-time", "text-anchor": "middle" });
+        d.textContent = h.date ? formatMD(h.date) : h.label;
+        svg.appendChild(d);
+      }
+    });
+    if (stats.fit && n >= 3) {
+      const s = stats.fitStart;
+      const endIdx = hasForecast ? n : n - 1;
+      const pts = [];
+      for (let i = s; i <= endIdx; i++) {
+        const v = stats.fit.intercept + stats.fit.slope * (i - s);
+        pts.push((xOf(i) + barW / 2) + "," + yOf(Math.max(0, Math.min(max, v))));
+      }
+      svg.appendChild(svgEl("polyline", { points: pts.join(" "), class: "vol-trend" }));
+    }
+    if (hasForecast) {
+      const x = xOf(n);
+      const y = yOf(stats.forecast);
+      svg.appendChild(svgEl("rect", { x: x, y: y, width: barW, height: Math.max(baseline - y, 2), rx: 3, class: "vol-bar forecast" }));
+      const t = svgEl("text", { x: x + barW / 2, y: Math.max(14, y - 6), class: "bar-time", "text-anchor": "middle" });
+      t.textContent = "~" + stats.forecast;
+      svg.appendChild(t);
+      const d = svgEl("text", { x: x + barW / 2, y: baseline + 16, class: "bar-time", "text-anchor": "middle" });
+      d.textContent = "next";
+      svg.appendChild(d);
+    }
+    return svg;
+  }
+  function volumeRead(model, stats, hist) {
+    const out = [];
+    const cur = model.current;
+    const throughTxt = model.through && cur && cur.date ? (model.bdIn >= 5 ? "full week" : `through ${formatMD(model.through)}, ${model.bdIn} of 5 business days`) : "";
+    out.push({ cls: "", text: `${weekLabelOf(cur) ? weekLabelOf(cur).replace(/^w/, "W") : "This week"}: ${fmtInt(stats.thisWeek)} orders${throughTxt ? " (" + throughTxt + ")" : ""}.` });
+    if (stats.prevWeek != null) {
+      const d = stats.thisWeek - stats.prevWeek;
+      out.push({ cls: signClass(d), text: `${d >= 0 ? "Up" : "Down"} ${fmtInt(Math.abs(d))} vs ${weekLabelOf(model.prevWeek) || "the previous week"} (${fmtInt(stats.prevWeek)}), ${fmtPct(stats.wow)} week over week.` });
+    }
+    if (stats.pace != null && stats.prevWeek != null) {
+      const vs = pctChange(stats.pace, stats.prevWeek);
+      out.push({ cls: signClass(vs), text: `On pace for about ${fmtInt(stats.pace)} this week if the rest of Mon–Fri matches so far (${fmtPct(vs)} vs last week). Early read with ${model.bdIn} days in.` });
+    }
+    if (stats.recent4 != null && stats.prior4 != null) {
+      out.push({ cls: signClass(stats.growth), text: `Recent 4 weeks ${fmtInt(stats.recent4)} vs prior 4 weeks ${fmtInt(stats.prior4)}: ${fmtPct(stats.growth)} growth.` });
+    }
+    if (stats.streak >= 2) out.push({ cls: "vol-up", text: `Up ${stats.streak} weeks in a row.` });
+    else if (stats.streak <= -2) out.push({ cls: "vol-down", text: `Down ${-stats.streak} weeks in a row.` });
+    else if (stats.cmp4 >= 2) out.push({ cls: "", text: `Up in ${stats.upOf4} of the last ${stats.cmp4} weeks.` });
+    if (hist.length >= 2) {
+      out.push({ cls: "", text: `Average ${fmtInt(stats.avg)} orders a week over ${hist.length} weeks on the Sheet${stats.best ? `; best week ${fmtInt(stats.best.orders)} (${stats.best.date ? formatMD(stats.best.date) : stats.best.label})` : ""}.` });
+    }
+    if (stats.forecast != null) {
+      const perWeek = stats.slope;
+      out.push({ cls: signClass(perWeek), text: `Next week read: about ${fmtInt(stats.forecast)} orders. The last ${Math.min(8, hist.length)} weeks trend ${perWeek >= 0 ? "+" : ""}${perWeek.toFixed(1)} orders a week.` });
+    } else {
+      out.push({ cls: "vol-flat", text: "Not enough weeks on the Sheet yet for a next-week read (needs 3)." });
+    }
+    return out;
+  }
+  function openVolumeDrawer(model, company) {
+    const all = company == null;
+    const hist = volumeHistory(model, all ? null : company);
+    const sheetRows = model.rowsForWeek(model.current).filter((r) => all || model.companyOf(r) === company);
+    const stats = volumeStats(model, hist, sheetRows);
+    const outlook = volumeOutlook(stats);
+    $("drawer-title").textContent = all ? "All companies" : company;
+    $("drawer-sub").textContent = `${weekLabelOf(model.current) ? "Week of " + formatMD(model.current.date || model.report) : "Present week"} · ${fmtInt(stats.thisWeek)} orders · ${fmtPct(stats.wow)} vs previous week`;
+    const body = $("drawer-body"); body.innerHTML = "";
+
+    const head = el(`<div class="vol-head"><span class="pill ${outlook.kind}">${esc(outlook.text)}</span><span class="muted">${stats.fromSheet ? "Prev week, WoW and 4-week numbers are the Sheet's own." : "Prev week, WoW and 4-week numbers are summed from Orders on the Sheet."}</span></div>`);
+    body.appendChild(head);
+
+    const tiles = [
+      ["Orders this week", fmtInt(stats.thisWeek), ""],
+      ["Prev week", fmtInt(stats.prevWeek), ""],
+      ["WoW change", fmtPct(stats.wow), signClass(stats.wow)],
+      ["Recent 4 weeks", fmtInt(stats.recent4), ""],
+      ["Prior 4 weeks", fmtInt(stats.prior4), ""],
+      ["Growth", fmtPct(stats.growth), signClass(stats.growth)],
+    ];
+    const grid = el(`<div class="vol-stats"></div>`);
+    tiles.forEach(([k, v, cls]) => grid.appendChild(el(`<div class="vol-stat"><div class="k">${esc(k)}</div><div class="v ${cls}">${esc(v)}</div></div>`)));
+    body.appendChild(grid);
+
+    body.appendChild(el(`<div class="section-title">Read</div>`));
+    const ul = el(`<ul class="vol-read"></ul>`);
+    volumeRead(model, stats, hist).forEach((line) => ul.appendChild(el(`<li class="${line.cls}">${esc(line.text)}</li>`)));
+    body.appendChild(ul);
+
+    body.appendChild(el(`<div class="section-title">Orders by week</div>`));
+    const card = el(`<div class="chart-card"></div>`);
+    if (hist.length) {
+      card.appendChild(volumeChart(hist, stats));
+      card.appendChild(el(`<div class="muted small vol-key"><span class="sw cur"></span> present week &nbsp; <span class="sw bar"></span> earlier weeks &nbsp; <span class="sw fc"></span> next-week read &nbsp; <span class="sw tr"></span> trend over the last ${Math.min(8, hist.length)} weeks</div>`));
+    } else {
+      card.appendChild(el(`<div class="empty">No week rows on the Sheet for this company.</div>`));
+    }
+    body.appendChild(card);
+
+    const months = monthTotals(hist);
+    if (months.length) {
+      body.appendChild(el(`<div class="section-title">By month</div>`));
+      const t = el(`<table class="vol-table"><thead><tr><th>Month</th><th class="num">Orders</th><th class="num">Weeks</th><th class="num">Per week</th><th class="num">Per week vs prior month</th></tr></thead><tbody></tbody></table>`);
+      const tb = t.querySelector("tbody");
+      months.slice(-8).forEach((m) => {
+        tb.appendChild(el(`<tr><td>${esc(m.label)}${m.partial ? ' <span class="muted">(so far)</span>' : ""}</td><td class="num">${fmtInt(m.orders)}</td><td class="num">${m.weeks}</td><td class="num">${fmtInt(m.perWeek)}</td><td class="num ${signClass(m.change)}">${fmtPct(m.change, 0)}</td></tr>`));
+      });
+      body.appendChild(t);
+    }
+
+    if (sheetRows.length && !all) {
+      body.appendChild(el(`<div class="section-title">On the Sheet this week</div>`));
+      sheetRows.forEach((r) => {
+        const dl = el(`<div class="po-card vol-row"></div>`);
+        state.volumeCols.forEach((c) => {
+          const v = r[c] == null ? "" : String(r[c]);
+          if (v === "") return;
+          dl.appendChild(el(`<div class="kv"><span class="k">${esc(c)}</span><span class="v">${esc(v)}</span></div>`));
+        });
+        body.appendChild(dl);
+      });
+    }
+    if (all) {
+      body.appendChild(el(`<div class="section-title">Companies this week</div>`));
+      const list = el(`<table class="vol-table"><thead><tr><th>Company</th><th class="num">Orders</th><th class="num">Prev week</th><th class="num">WoW</th><th>Outlook</th></tr></thead><tbody></tbody></table>`);
+      const tb = list.querySelector("tbody");
+      const names = [...new Set(model.rowsForWeek(model.current).map(model.companyOf))].filter(Boolean);
+      const items = names.map((name) => {
+        const h = volumeHistory(model, name);
+        const s = volumeStats(model, h, model.rowsForWeek(model.current).filter((r) => model.companyOf(r) === name));
+        return { name: name, s: s, o: volumeOutlook(s) };
+      }).sort((a, b) => b.s.thisWeek - a.s.thisWeek);
+      items.forEach((it) => {
+        const tr = el(`<tr><td><button type="button" class="linklike">${esc(it.name)}</button></td><td class="num">${fmtInt(it.s.thisWeek)}</td><td class="num">${fmtInt(it.s.prevWeek)}</td><td class="num ${signClass(it.s.wow)}">${fmtPct(it.s.wow)}</td><td><span class="pill ${it.o.kind}">${esc(it.o.text)}</span></td></tr>`);
+        tr.querySelector("button").onclick = () => openVolumeDrawer(model, it.name);
+        tb.appendChild(tr);
+      });
+      body.appendChild(list);
+    }
+    $("drawer").hidden = false; $("scrim").hidden = false;
+    $("drawer-body").scrollTop = 0;
   }
   function renderVolume() {
     const host = $("page-volume");
@@ -1399,50 +1758,54 @@
       host.appendChild(el(`<div class="empty">No Company Volume Trends tab in this Sheet.</div>`));
       return;
     }
-    const report = reportDateUtc();
-    const win = reportWeekWindow(report);
-    const picked = assignVolumeCols(state.volumeCols, state.volume);
-    let rows = state.volume.slice();
-    let filtered = false;
-    if (picked.week) {
-      filtered = true;
-      rows = state.volume.filter((r) => weekCellInReportWeek(r[picked.week], report));
-    }
-    const weekLabel = formatMD(win.monday) + "–" + formatMD(win.end);
+    const model = volumeModel();
+    const p = model.picked;
+    const rows = model.rowsForWeek(model.current);
     const pack = reportMonthDay();
-    const packLabel = pack ? (pack.month + "/" + pack.day) : "this pack";
+    const packLabel = pack ? (pack.month + "/" + pack.day) : "today";
     if (!rows.length) {
-      const seen = [];
-      state.volume.forEach((r) => {
-        const v = picked.week ? String(r[picked.week] || "").trim() : "";
-        if (v && !seen.includes(v)) seen.push(v);
-      });
-      const sample = seen.slice(0, 6).map(esc).join(", ");
-      host.appendChild(el(
-        `<div class="page-head"><h2>Company Volume Trends</h2></div>`
-      ));
-      host.appendChild(el(
-        `<div class="empty">No rows for the week of ${esc(weekLabel)} (pack date ${esc(packLabel)}).`
-        + (sample ? ` Week values on the Sheet include ${sample}.` : "")
-        + `</div>`
-      ));
+      host.appendChild(el(`<div class="page-head"><h2>Company Volume Trends</h2></div>`));
+      host.appendChild(el(`<div class="empty">No rows on the Sheet for the present week (pack ${esc(packLabel)}).${p.week ? "" : " No Week column was found; headers are " + esc(state.volumeCols.join(", ")) + "."}</div>`));
       return;
     }
-    rows.sort((a, b) => {
-      const ga = picked.growth ? metricNum(a[picked.growth]) : null;
-      const gb = picked.growth ? metricNum(b[picked.growth]) : null;
-      if (ga == null && gb == null) return 0;
-      if (ga == null) return 1;
-      if (gb == null) return -1;
-      return gb - ga;
-    });
-    const hidden = filtered ? state.volume.length - rows.length : 0;
-    const legend = `Week of ${weekLabel} (pack date ${packLabel}). ${rows.length} ${rows.length === 1 ? "row" : "rows"}.`
-      + (hidden ? ` ${hidden} other-week ${hidden === 1 ? "row stays" : "rows stay"} on the Sheet.` : " This tab has no other weeks.")
-      + " Outlook is a first read from growth.";
+    const weekTxt = model.current ? (model.current.date ? `Week of ${formatMD(model.current.date)}–${formatMD(addDays(model.current.date, 4))}` : `Week ${esc(model.current.label)}`) : "All rows";
+    const prevTxt = model.prevWeek ? ` compared with ${weekLabelOf(model.prevWeek)}` : "";
+    const throughTxt = model.through && model.current && model.current.date ? (model.bdIn >= 5 ? "" : `, ${model.bdIn} of 5 business days in (through ${formatMD(model.through)})`) : "";
+    const hidden = state.volume.length - rows.length;
+    const legend = `${weekTxt} (pack ${packLabel})${prevTxt}${throughTxt}. ${rows.length} ${rows.length === 1 ? "row" : "rows"}`
+      + (hidden ? `; ${hidden} other-week ${hidden === 1 ? "row stays" : "rows stay"} on the Sheet.` : ".")
+      + " Click a company for its history and next-week read.";
     host.appendChild(el(`<div class="page-head"><h2>Company Volume Trends</h2><span class="legend">${legend}</span></div>`));
-    const cols = volumeDisplayCols(state.volumeCols, picked);
-    const signed = new Set([picked.wow, picked.growth].filter(Boolean));
+
+    // Overview: every company this week, summed from Orders.
+    const allHist = volumeHistory(model, null);
+    const allStats = volumeStats(model, allHist, []);
+    const companies = [...new Set(rows.map(model.companyOf))].filter(Boolean);
+    const perCompany = companies.map((name) => {
+      const h = volumeHistory(model, name);
+      const s = volumeStats(model, h, rows.filter((r) => model.companyOf(r) === name));
+      return { name: name, stats: s, outlook: volumeOutlook(s) };
+    });
+    const rising = perCompany.filter((c) => c.outlook.kind === "grow").length;
+    const falling = perCompany.filter((c) => c.outlook.kind === "slow").length;
+    const strip = el(`<div class="vol-overview"></div>`);
+    const total = el(`<button type="button" class="vol-card clickable"><div class="k">All companies · orders this week</div><div class="v">${fmtInt(allStats.thisWeek)}</div><div class="d ${signClass(allStats.wow)}">${fmtPct(allStats.wow)} vs ${weekLabelOf(model.prevWeek) || "previous week"} (${fmtInt(allStats.prevWeek)})</div></button>`);
+    total.title = "Open the overall history";
+    total.onclick = () => openVolumeDrawer(model, null);
+    strip.appendChild(total);
+    strip.appendChild(el(`<div class="vol-card"><div class="k">Recent 4 vs prior 4 weeks</div><div class="v ${signClass(allStats.growth)}">${fmtPct(allStats.growth)}</div><div class="d muted">${fmtInt(allStats.recent4)} vs ${fmtInt(allStats.prior4)}</div></div>`));
+    strip.appendChild(el(`<div class="vol-card"><div class="k">Next week read</div><div class="v">${allStats.forecast == null ? "—" : "~" + fmtInt(allStats.forecast)}</div><div class="d muted">from the last ${Math.min(8, allHist.length)} weeks</div></div>`));
+    if (allStats.pace != null) {
+      strip.appendChild(el(`<div class="vol-card"><div class="k">This week's pace</div><div class="v ${signClass(pctChange(allStats.pace, allStats.prevWeek))}">~${fmtInt(allStats.pace)}</div><div class="d muted">${model.bdIn} of 5 business days in · ${fmtPct(pctChange(allStats.pace, allStats.prevWeek))} vs last week</div></div>`));
+    }
+    strip.appendChild(el(`<div class="vol-card"><div class="k">Companies</div><div class="v">${companies.length}</div><div class="d"><span class="vol-up">${rising} growing</span> · <span class="vol-down">${falling} slowing</span> · <span class="muted">${companies.length - rising - falling} steady</span></div></div>`));
+    host.appendChild(strip);
+
+    // Table: every column the Sheet has, in Sheet order, plus Outlook.
+    const cols = state.volumeCols.slice();
+    const signed = new Set([p.wow, p.growth].filter(Boolean));
+    const statsByName = new Map(perCompany.map((c) => [c.name, c]));
+    rows.sort((a, b) => model.ordersOf(b) - model.ordersOf(a) || model.companyOf(a).localeCompare(model.companyOf(b)));
     const wrap = el(`<div class="grid-wrap"></div>`);
     const table = document.createElement("table");
     table.className = "grid";
@@ -1451,6 +1814,7 @@
     cols.forEach((c) => {
       const th = document.createElement("th");
       th.textContent = c;
+      if (c === p.orders) { th.classList.add("vol-main"); th.title = "The week's order count. Rows are sorted by this column."; }
       hr.appendChild(th);
     });
     const outTh = document.createElement("th");
@@ -1460,19 +1824,32 @@
     const tb = document.createElement("tbody");
     rows.forEach((r) => {
       const tr = document.createElement("tr");
+      const name = model.companyOf(r);
+      const info = statsByName.get(name);
       cols.forEach((c) => {
         const td = document.createElement("td");
         const text = r[c] == null ? "" : String(r[c]);
-        td.textContent = text;
         const n = metricNum(text);
-        if (n !== null) td.classList.add("num");
-        if (signed.has(c) && n > 0) td.classList.add("up");
-        else if (signed.has(c) && n < 0) td.classList.add("down");
+        if (c === p.company && name) {
+          td.className = "clickable";
+          td.textContent = text;
+          td.title = "Open this company's history";
+          td.onclick = () => openVolumeDrawer(model, name);
+        } else {
+          td.textContent = text;
+          if (n !== null) td.classList.add("num");
+          if (c === p.orders) td.classList.add("vol-main");
+          if (signed.has(c) && n > 0) td.classList.add("up");
+          else if (signed.has(c) && n < 0) td.classList.add("down");
+        }
         tr.appendChild(td);
       });
-      const outlook = volumeOutlook(r, picked);
       const td = document.createElement("td");
-      if (outlook.text) td.appendChild(el(`<span class="pill ${outlook.kind}">${esc(outlook.text)}</span>`));
+      if (info) {
+        const pill = el(`<span class="pill ${info.outlook.kind}">${esc(info.outlook.text)}</span>`);
+        if (info.stats.forecast != null) pill.title = `Next week read: about ${fmtInt(info.stats.forecast)} orders`;
+        td.appendChild(pill);
+      }
       tr.appendChild(td);
       tb.appendChild(tr);
     });

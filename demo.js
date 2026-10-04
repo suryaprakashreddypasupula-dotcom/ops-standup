@@ -69,16 +69,6 @@
       ["SOLEMATE", "demo-hold-4", "Demo Patient D", "English", "Quinn Brooks", "quinn.brooks@example.com", "555-0104", "Example Foot Care", "DRAFT", "Auth Flip", "", "9/1/2026", 22, "", "8/28/2026", "", ""],
       ["SOLEFORGE", "demo-hold-5", "Demo Patient E", "Spanish", "Morgan Diaz", "morgan.diaz@example.com", "555-0105", "Sample Clinic A", "NEEDS_MANUFACTURING", "Manual", "Scan unreadable", "9/26/2026", 5, "", "9/18/2026", "Jordan Lee", "jordan.lee@example.com"],
     ],
-    [`${P} Company Volume Trends`]: [
-      ["Company", "Week", "Week Orders", "Prev Week", "WoW Change", "Recent 4 Weeks", "Prior 4 Weeks", "Growth"],
-      ["Sample Clinic A", "9/28/2026", 48, 36, "33.3%", 170, 140, "21.4%"],
-      ["Sample Clinic B", "9/28/2026", 30, 28, "7.1%", 110, 112, "1.9%"],
-      ["Demo Orthotics", "9/28/2026", 18, 25, "-28.0%", 80, 100, "-20.0%"],
-      ["Example Foot Care", "2026-W40", 22, 22, "0%", 88, 88, "0%"],
-      ["Sample Clinic A", "9/21/2026", 36, 40, "-10.0%", 150, 160, "-6.3%"],
-      ["Paused Demo Clinic", "9/21/2026", 9, 12, "-25.0%", 40, 55, "-27.3%"],
-      ["Sample Clinic A", "10/5/2026", 99, 48, "106.3%", 200, 140, "42.9%"],
-    ],
     [`${P} TAT Report`]: [
       ["timeframe", "factory", "workstation", "sla_status", "current_status", "po_number", "days_over", "company_name", "workbench_id"],
       ["Last 2d", "SOLEFORGE", "Printing", "MISSED", "COMPLETED", "demo-print-1", "1", "Sample Clinic A", "wb-demo-print-1"],
@@ -120,6 +110,39 @@
   // Make the pre-seeded PO note point at a real demo row.
   const firstSolemateOverdue = detail.find((r) => r[0] === "SOLEMATE" && r[2] === "PRINTING — Not Queued" && r[10] === "OVERDUE");
   if (firstSolemateOverdue) TABS.Notes[2][8] = firstSolemateOverdue[5];
+  // Two of the On Hold External POs also sit on Delinquency Detail (as they do
+  // on the real pack), so the Hold page can link them to a workbench. The
+  // other three have no workbench anywhere on this Sheet and stay plain text.
+  detail.filter((r) => r[2] === "On Hold External" && r[3] === "wip").slice(0, 2).forEach((r, i) => {
+    r[5] = `demo-hold-${i + 1}`;
+    r[6] = `wb-demo-hold-${i + 1}`;
+  });
+
+  // Company Volume Trends: every week for every company, like the real tab.
+  // 14 Mondays ending 9/28/2026 (the week of the 9_29 pack) plus one row for
+  // the following week, which the page must not show yet.
+  const VOL_SERIES = {
+    "Sample Clinic A": [30, 32, 31, 35, 36, 38, 37, 40, 42, 41, 44, 46, 36, 48],
+    "Sample Clinic B": [28, 30, 27, 29, 31, 28, 30, 29, 28, 31, 30, 28, 28, 30],
+    "Demo Orthotics": [40, 38, 39, 36, 35, 33, 34, 30, 29, 28, 26, 25, 25, 18],
+    "Example Foot Care": [20, 21, 22, 20, 23, 22, 21, 24, 22, 23, 22, 21, 22, 22],
+    "Paused Demo Clinic": [15, 14, 14, 12, 12, 10, 9, 9, 8, 7, 6, 5, 4, 0],
+  };
+  const volTab = [["Company", "Week", "Orders", "Prev Week", "WoW Change", "Recent 4 Weeks", "Prior 4 Weeks", "Growth"]];
+  const firstMonday = Date.UTC(2026, 5, 29);
+  const mdy = (t) => { const d = new Date(t); return `${d.getUTCMonth() + 1}/${d.getUTCDate()}/${d.getUTCFullYear()}`; };
+  const pct = (a, b) => (b ? (((a - b) / b) * 100).toFixed(1) + "%" : "");
+  const total = (arr) => arr.reduce((x, y) => x + y, 0);
+  Object.keys(VOL_SERIES).forEach((co) => {
+    VOL_SERIES[co].forEach((n, i) => {
+      const prev = i > 0 ? VOL_SERIES[co][i - 1] : "";
+      const recent = total(VOL_SERIES[co].slice(Math.max(0, i - 3), i + 1));
+      const prior = i >= 4 ? total(VOL_SERIES[co].slice(Math.max(0, i - 7), i - 3)) : "";
+      volTab.push([co, mdy(firstMonday + i * 7 * 86400000), n, prev, prev === "" ? "" : pct(n, prev), recent, prior, prior === "" ? "" : pct(recent, prior)]);
+    });
+  });
+  volTab.push(["Sample Clinic A", "10/5/2026", 99, 48, "106.3%", 200, 140, "42.9%"]);
+  TABS[`${P} Company Volume Trends`] = volTab;
 
   function unq(name) { return name.replace(/^'|'$/g, "").replace(/''/g, "'"); }
 
