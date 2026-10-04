@@ -255,9 +255,11 @@ table.grid tr.factory-start td { border-top: 2px solid var(--border); }
 #page-volume td.down { color: var(--danger); font-weight: 700; }
 #page-volume th.vol-main { background: #c5d4ee; }
 #page-volume td.vol-main { font-weight: 700; }
+.pill.new { background: #e8f1ff; color: var(--accent); margin-left: 6px; }
 .pill.grow { background: var(--ok-bg); color: #1b7f4a; }
 .pill.slow { background: #fde8e8; color: var(--danger); }
 .pill.steady { background: #eef1f6; color: var(--muted); }
+.vol-note { margin: 0 0 8px; }
 .vol-overview { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 12px; }
 .vol-card {
   background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px;

@@ -1443,11 +1443,20 @@
     }
     return { report: report, picked: picked, weeks: weeks, current: current, prevWeek: prevWeek, rowWeek: rowWeek, companyOf: companyOf, ordersOf: ordersOf, rowsForWeek: rowsForWeek, bdIn: bdIn, through: through };
   }
+  // ALL Clinical and ALL Consumer are totals the Sheet already computed.
+  // Adding them on top of the companies counts every order twice.
+  function isRollupRow(row) {
+    return state.volumeCols.some((c) => {
+      const s = String(row[c] == null ? "" : row[c]).trim().toLowerCase();
+      return s === "all" || s.startsWith("all ");
+    });
+  }
   function volumeHistory(model, company) {
     return model.weeks.map((w) => {
       let orders = 0;
       let rows = 0;
       state.volume.forEach((r) => {
+        if (isRollupRow(r)) return;
         if (model.rowWeek.get(r) !== w.key) return;
         if (company != null && model.companyOf(r) !== company) return;
         orders += model.ordersOf(r);
@@ -1455,6 +1464,14 @@
       });
       return { key: w.key, date: w.date, label: w.label, orders: orders, rows: rows, current: model.current && w.key === model.current.key };
     }).filter((h) => h.rows > 0 || h.current);
+  }
+  // New from the first week on the Sheet until one month after that week.
+  function isNewCompany(model, name) {
+    if (!model.current || !model.current.date) return false;
+    const first = volumeHistory(model, name).find((h) => h.date && h.rows > 0);
+    if (!first) return false;
+    const end = new Date(Date.UTC(first.date.getUTCFullYear(), first.date.getUTCMonth() + 1, first.date.getUTCDate()));
+    return model.current.date < end;
   }
   function linearFit(ys) {
     const n = ys.length;
@@ -1674,6 +1691,7 @@
     const stats = volumeStats(model, hist, sheetRows);
     const outlook = volumeOutlook(stats);
     $("drawer-title").textContent = all ? "All companies" : company;
+    if (!all && isNewCompany(model, company)) $("drawer-title").appendChild(el(` <span class="pill new">New</span>`));
     $("drawer-sub").textContent = `${weekLabelOf(model.current) ? "Week of " + formatMD(model.current.date || model.report) : "Present week"} · ${fmtInt(stats.thisWeek)} orders · ${fmtPct(stats.wow)} vs previous week`;
     const body = $("drawer-body"); body.innerHTML = "";
 
@@ -1734,14 +1752,14 @@
       body.appendChild(el(`<div class="section-title">Companies this week</div>`));
       const list = el(`<table class="vol-table"><thead><tr><th>Company</th><th class="num">Orders</th><th class="num">Prev week</th><th class="num">WoW</th><th>Outlook</th></tr></thead><tbody></tbody></table>`);
       const tb = list.querySelector("tbody");
-      const names = [...new Set(model.rowsForWeek(model.current).map(model.companyOf))].filter(Boolean);
+      const names = [...new Set(model.rowsForWeek(model.current).filter((r) => !isRollupRow(r)).map(model.companyOf))].filter(Boolean);
       const items = names.map((name) => {
         const h = volumeHistory(model, name);
         const s = volumeStats(model, h, model.rowsForWeek(model.current).filter((r) => model.companyOf(r) === name));
         return { name: name, s: s, o: volumeOutlook(s) };
       }).sort((a, b) => b.s.thisWeek - a.s.thisWeek);
       items.forEach((it) => {
-        const tr = el(`<tr><td><button type="button" class="linklike">${esc(it.name)}</button></td><td class="num">${fmtInt(it.s.thisWeek)}</td><td class="num">${fmtInt(it.s.prevWeek)}</td><td class="num ${signClass(it.s.wow)}">${fmtPct(it.s.wow)}</td><td><span class="pill ${it.o.kind}">${esc(it.o.text)}</span></td></tr>`);
+        const tr = el(`<tr><td><button type="button" class="linklike">${esc(it.name)}</button>${isNewCompany(model, it.name) ? ' <span class="pill new">New</span>' : ""}</td><td class="num">${fmtInt(it.s.thisWeek)}</td><td class="num">${fmtInt(it.s.prevWeek)}</td><td class="num ${signClass(it.s.wow)}">${fmtPct(it.s.wow)}</td><td><span class="pill ${it.o.kind}">${esc(it.o.text)}</span></td></tr>`);
         tr.querySelector("button").onclick = () => openVolumeDrawer(model, it.name);
         tb.appendChild(tr);
       });
@@ -1768,23 +1786,27 @@
       host.appendChild(el(`<div class="empty">No rows on the Sheet for the present week (pack ${esc(packLabel)}).${p.week ? "" : " No Week column was found; headers are " + esc(state.volumeCols.join(", ")) + "."}</div>`));
       return;
     }
+    const companyRows = rows.filter((r) => !isRollupRow(r));
+    const rollupRows = rows.filter(isRollupRow);
     const weekTxt = model.current ? (model.current.date ? `Week of ${formatMD(model.current.date)}–${formatMD(addDays(model.current.date, 4))}` : `Week ${esc(model.current.label)}`) : "All rows";
     const prevTxt = model.prevWeek ? ` compared with ${weekLabelOf(model.prevWeek)}` : "";
     const throughTxt = model.through && model.current && model.current.date ? (model.bdIn >= 5 ? "" : `, ${model.bdIn} of 5 business days in (through ${formatMD(model.through)})`) : "";
     const hidden = state.volume.length - rows.length;
-    const legend = `${weekTxt} (pack ${packLabel})${prevTxt}${throughTxt}. ${rows.length} ${rows.length === 1 ? "row" : "rows"}`
-      + (hidden ? `; ${hidden} other-week ${hidden === 1 ? "row stays" : "rows stay"} on the Sheet.` : ".")
+    const legend = `${weekTxt} (pack ${packLabel})${prevTxt}${throughTxt}. ${companyRows.length} ${companyRows.length === 1 ? "company" : "companies"}`
+      + (rollupRows.length ? `. ${rollupRows.length} ALL ${rollupRows.length === 1 ? "total is" : "totals are"} shown separately and not added in.` : "")
+      + (hidden ? ` ${hidden} other-week ${hidden === 1 ? "row stays" : "rows stay"} on the Sheet.` : "")
       + " Click a company for its history and next-week read.";
     host.appendChild(el(`<div class="page-head"><h2>Company Volume Trends</h2><span class="legend">${legend}</span></div>`));
 
-    // Overview: every company this week, summed from Orders.
+    // Overview sums companies only. ALL Clinical / ALL Consumer stay out.
     const allHist = volumeHistory(model, null);
     const allStats = volumeStats(model, allHist, []);
-    const companies = [...new Set(rows.map(model.companyOf))].filter(Boolean);
+    const companies = [...new Set(companyRows.map(model.companyOf))].filter(Boolean);
     const perCompany = companies.map((name) => {
       const h = volumeHistory(model, name);
-      const s = volumeStats(model, h, rows.filter((r) => model.companyOf(r) === name));
-      return { name: name, stats: s, outlook: volumeOutlook(s) };
+      const own = companyRows.filter((r) => model.companyOf(r) === name);
+      const s = volumeStats(model, h, own);
+      return { name: name, stats: s, outlook: volumeOutlook(s), isNew: isNewCompany(model, name) };
     });
     const rising = perCompany.filter((c) => c.outlook.kind === "grow").length;
     const falling = perCompany.filter((c) => c.outlook.kind === "slow").length;
@@ -1798,14 +1820,27 @@
     if (allStats.pace != null) {
       strip.appendChild(el(`<div class="vol-card"><div class="k">This week's pace</div><div class="v ${signClass(pctChange(allStats.pace, allStats.prevWeek))}">~${fmtInt(allStats.pace)}</div><div class="d muted">${model.bdIn} of 5 business days in · ${fmtPct(pctChange(allStats.pace, allStats.prevWeek))} vs last week</div></div>`));
     }
-    strip.appendChild(el(`<div class="vol-card"><div class="k">Companies</div><div class="v">${companies.length}</div><div class="d"><span class="vol-up">${rising} growing</span> · <span class="vol-down">${falling} slowing</span> · <span class="muted">${companies.length - rising - falling} steady</span></div></div>`));
+    const newCount = perCompany.filter((c) => c.isNew).length;
+    strip.appendChild(el(`<div class="vol-card"><div class="k">Companies</div><div class="v">${companies.length}</div><div class="d"><span class="vol-up">${rising} growing</span> · <span class="vol-down">${falling} slowing</span> · <span class="muted">${companies.length - rising - falling} steady</span>${newCount ? ` · <span class="pill new">${newCount} new</span>` : ""}</div></div>`));
     host.appendChild(strip);
+
+    if (rollupRows.length) {
+      host.appendChild(el(`<div class="section-title">Sheet totals</div>`));
+      host.appendChild(el(`<p class="muted vol-note">ALL Clinical and ALL Consumer are the Sheet's own totals. They are not added to the companies.</p>`));
+      host.appendChild(volumeSheetTable(model, rollupRows, false));
+    }
 
     // Table: every column the Sheet has, in Sheet order, plus Outlook.
     const cols = state.volumeCols.slice();
     const signed = new Set([p.wow, p.growth].filter(Boolean));
-    const statsByName = new Map(perCompany.map((c) => [c.name, c]));
-    rows.sort((a, b) => model.ordersOf(b) - model.ordersOf(a) || model.companyOf(a).localeCompare(model.companyOf(b)));
+    host.appendChild(el(`<div class="section-title">Companies</div>`));
+    companyRows.sort((a, b) => model.ordersOf(b) - model.ordersOf(a) || model.companyOf(a).localeCompare(model.companyOf(b)));
+    host.appendChild(volumeSheetTable(model, companyRows, true));
+  }
+  function volumeSheetTable(model, list, withCompany) {
+    const p = model.picked;
+    const cols = state.volumeCols.slice();
+    const signed = new Set([p.wow, p.growth].filter(Boolean));
     const wrap = el(`<div class="grid-wrap"></div>`);
     const table = document.createElement("table");
     table.className = "grid";
@@ -1814,25 +1849,27 @@
     cols.forEach((c) => {
       const th = document.createElement("th");
       th.textContent = c;
-      if (c === p.orders) { th.classList.add("vol-main"); th.title = "The week's order count. Rows are sorted by this column."; }
+      if (c === p.orders) { th.classList.add("vol-main"); th.title = "The week's order count."; }
       hr.appendChild(th);
     });
-    const outTh = document.createElement("th");
-    outTh.textContent = "Outlook";
-    hr.appendChild(outTh);
+    if (withCompany) {
+      const outTh = document.createElement("th");
+      outTh.textContent = "Outlook";
+      hr.appendChild(outTh);
+    }
     thead.appendChild(hr);
     const tb = document.createElement("tbody");
-    rows.forEach((r) => {
+    list.forEach((r) => {
       const tr = document.createElement("tr");
       const name = model.companyOf(r);
-      const info = statsByName.get(name);
       cols.forEach((c) => {
         const td = document.createElement("td");
         const text = r[c] == null ? "" : String(r[c]);
         const n = metricNum(text);
-        if (c === p.company && name) {
+        if (withCompany && c === p.company && name) {
           td.className = "clickable";
           td.textContent = text;
+          if (isNewCompany(model, name)) td.appendChild(el(` <span class="pill new">New</span>`));
           td.title = "Open this company's history";
           td.onclick = () => openVolumeDrawer(model, name);
         } else {
@@ -1844,18 +1881,24 @@
         }
         tr.appendChild(td);
       });
-      const td = document.createElement("td");
-      if (info) {
-        const pill = el(`<span class="pill ${info.outlook.kind}">${esc(info.outlook.text)}</span>`);
-        if (info.stats.forecast != null) pill.title = `Next week read: about ${fmtInt(info.stats.forecast)} orders`;
-        td.appendChild(pill);
+      if (withCompany) {
+        const h = volumeHistory(model, name);
+        const own = list.filter((row) => model.companyOf(row) === name);
+        const info = name ? { stats: volumeStats(model, h, own), outlook: null } : null;
+        if (info) info.outlook = volumeOutlook(info.stats);
+        const td = document.createElement("td");
+        if (info && info.outlook) {
+          const pill = el(`<span class="pill ${info.outlook.kind}">${esc(info.outlook.text)}</span>`);
+          if (info.stats.forecast != null) pill.title = `Next week read: about ${fmtInt(info.stats.forecast)} orders`;
+          td.appendChild(pill);
+        }
+        tr.appendChild(td);
       }
-      tr.appendChild(td);
       tb.appendChild(tr);
     });
     table.append(thead, tb);
     wrap.appendChild(table);
-    host.appendChild(wrap);
+    return wrap;
   }
 
   // ───────────────────────── shell ─────────────────────────

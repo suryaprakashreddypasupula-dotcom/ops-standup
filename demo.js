@@ -128,20 +128,36 @@
     "Example Foot Care": [20, 21, 22, 20, 23, 22, 21, 24, 22, 23, 22, 21, 22, 22],
     "Paused Demo Clinic": [15, 14, 14, 12, 12, 10, 9, 9, 8, 7, 6, 5, 4, 0],
   };
-  const volTab = [["Company", "Week", "Orders", "Prev Week", "WoW Change", "Recent 4 Weeks", "Prior 4 Weeks", "Growth"]];
+  const volTab = [["Company", "Segment", "Week", "Orders", "Prev Week", "WoW Change", "Recent 4 Weeks", "Prior 4 Weeks", "Growth"]];
   const firstMonday = Date.UTC(2026, 5, 29);
   const mdy = (t) => { const d = new Date(t); return `${d.getUTCMonth() + 1}/${d.getUTCDate()}/${d.getUTCFullYear()}`; };
   const pct = (a, b) => (b ? (((a - b) / b) * 100).toFixed(1) + "%" : "");
   const total = (arr) => arr.reduce((x, y) => x + y, 0);
+  const pushVol = (co, segment, i, n, prev, recent, prior) => {
+    volTab.push([co, segment, mdy(firstMonday + i * 7 * 86400000), n, prev, prev === "" ? "" : pct(n, prev), recent, prior, prior === "" ? "" : pct(recent, prior)]);
+  };
   Object.keys(VOL_SERIES).forEach((co) => {
     VOL_SERIES[co].forEach((n, i) => {
       const prev = i > 0 ? VOL_SERIES[co][i - 1] : "";
       const recent = total(VOL_SERIES[co].slice(Math.max(0, i - 3), i + 1));
       const prior = i >= 4 ? total(VOL_SERIES[co].slice(Math.max(0, i - 7), i - 3)) : "";
-      volTab.push([co, mdy(firstMonday + i * 7 * 86400000), n, prev, prev === "" ? "" : pct(n, prev), recent, prior, prior === "" ? "" : pct(recent, prior)]);
+      pushVol(co, "Clinical", i, n, prev, recent, prior);
     });
   });
-  volTab.push(["Sample Clinic A", "10/5/2026", 99, 48, "106.3%", 200, 140, "42.9%"]);
+  // First appears 9/21, still inside its first month on the 9/28 week.
+  const newSeries = [7, 11];
+  newSeries.forEach((n, j) => {
+    const i = 12 + j;
+    pushVol("New Demo Clinic", "Clinical", i, n, j ? newSeries[j - 1] : "", n, "");
+  });
+  for (let i = 0; i < 14; i++) {
+    const clinical = Object.keys(VOL_SERIES).reduce((sum, co) => sum + VOL_SERIES[co][i], 0) + (i >= 12 ? newSeries[i - 12] : 0);
+    const consumer = 10;
+    const prevC = i > 0 ? Object.keys(VOL_SERIES).reduce((sum, co) => sum + VOL_SERIES[co][i - 1], 0) + (i - 1 >= 12 ? newSeries[i - 1 - 12] : 0) : "";
+    pushVol("ALL", "Clinical", i, clinical, prevC, "", "");
+    pushVol("ALL", "Consumer", i, consumer, i > 0 ? consumer : "", "", "");
+  }
+  volTab.push(["Sample Clinic A", "Clinical", "10/5/2026", 99, 48, "106.3%", 200, 140, "42.9%"]);
   TABS[`${P} Company Volume Trends`] = volTab;
 
   function unq(name) { return name.replace(/^'|'$/g, "").replace(/''/g, "'"); }
