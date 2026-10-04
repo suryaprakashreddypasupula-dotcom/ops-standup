@@ -247,6 +247,18 @@ table.grid tr.factory-start td { border-top: 2px solid var(--border); }
 #page-holds a.po-link { color: var(--link); font-weight: 600; text-decoration: none; }
 #page-holds a.po-link:hover { text-decoration: underline; }
 
+/* Hanger Day 3+ TAT and Union Day 3+ TAT. */
+#page-hanger .grid-wrap, #page-union .grid-wrap { overflow: auto; }
+#page-hanger table.grid, #page-union table.grid { min-width: 0; width: max-content; }
+#page-hanger a.po-link, #page-union a.po-link { color: var(--link); font-weight: 600; text-decoration: none; }
+#page-hanger a.po-link:hover, #page-union a.po-link:hover { text-decoration: underline; }
+.tat-key { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
+.tat-key span { padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+#page-hanger tr.tat-3 td, #page-union tr.tat-3 td, .tat-key .tat-3 { background: #fff8dc; }
+#page-hanger tr.tat-4 td, #page-union tr.tat-4 td, .tat-key .tat-4 { background: #ffe566; }
+#page-hanger tr.tat-5 td, #page-union tr.tat-5 td, .tat-key .tat-5 { background: #ffb74d; }
+#page-hanger tr.tat-over td, #page-union tr.tat-over td, .tat-key .tat-over { background: #ef9a9a; }
+
 /* Company Volume Trends only (page + its drawer content, all vol-* classes). */
 #page-volume .grid-wrap { overflow: auto; }
 #page-volume table.grid { min-width: 0; width: max-content; }

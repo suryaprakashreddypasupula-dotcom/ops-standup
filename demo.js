@@ -69,6 +69,21 @@
       ["SOLEMATE", "demo-hold-4", "Demo Patient D", "English", "Quinn Brooks", "quinn.brooks@example.com", "555-0104", "Example Foot Care", "DRAFT", "Auth Flip", "", "9/1/2026", 22, "", "8/28/2026", "", ""],
       ["SOLEFORGE", "demo-hold-5", "Demo Patient E", "Spanish", "Morgan Diaz", "morgan.diaz@example.com", "555-0105", "Sample Clinic A", "NEEDS_MANUFACTURING", "Manual", "Scan unreadable", "9/26/2026", 5, "", "9/18/2026", "Jordan Lee", "jordan.lee@example.com"],
     ],
+    [`${P} Hanger Day 3+ TAT`]: [
+      ["Factory", "PO Number", "Company", "Station", "Days", "workbench_id"],
+      ["SOLEMATE", "demo-hanger-3", "Sample Clinic A", "NEEDS_GLUING", 3, "wb-demo-hanger-3"],
+      ["SOLEFORGE", "demo-hanger-4", "Sample Clinic B", "NEEDS_FINISHING", 4, "wb-demo-hanger-4"],
+      ["SOLEMATE", "demo-hanger-5", "Demo Orthotics", "NEEDS_SHIPPING", 5, "wb-demo-hanger-5"],
+      ["SOLEFORGE", "demo-hanger-6", "Example Foot Care", "NEEDS_GLUING", 6, "wb-demo-hanger-6"],
+      ["SOLEMATE", "demo-hanger-8", "Sample Clinic A", "NEEDS_FINISHING", 8, "wb-demo-hanger-8"],
+    ],
+    [`${P} Union Day 3+ TAT`]: [
+      ["Factory", "PO Number", "Company", "Station", "Days", "workbench_id"],
+      ["SOLEFORGE", "demo-union-3", "Sample Clinic B", "NEEDS_GLUING", 3, "wb-demo-union-3"],
+      ["SOLEMATE", "demo-union-4", "Demo Orthotics", "NEEDS_FINISHING", 4, "wb-demo-union-4"],
+      ["SOLEFORGE", "demo-union-5", "Example Foot Care", "NEEDS_SHIPPING", 5, "wb-demo-union-5"],
+      ["SOLEMATE", "demo-union-7", "Sample Clinic A", "NEEDS_GLUING", 7, "wb-demo-union-7"],
+    ],
     [`${P} TAT Report`]: [
       ["timeframe", "factory", "workstation", "sla_status", "current_status", "po_number", "days_over", "company_name", "workbench_id"],
       ["Last 2d", "SOLEFORGE", "Printing", "MISSED", "COMPLETED", "demo-print-1", "1", "Sample Clinic A", "wb-demo-print-1"],

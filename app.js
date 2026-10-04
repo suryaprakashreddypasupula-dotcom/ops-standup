@@ -8,6 +8,9 @@
  *           links to its workbench, and notes can be written per PO or per row.
  *   page 4  On Hold External       — same columns as the Sheet; a PO opens its
  *           workbench when the id is known from this Sheet.
+ *   page 4b Hanger Day 3+ TAT      — same columns as the Sheet. Day 3 light,
+ *           day 4 yellow, day 5 orange, more than 5 days red. PO opens workbench.
+ *   page 4c Union Day 3+ TAT       — same rules as Hanger, its own tab.
  *   page 5  Company Volume Trends  — the present week only, from the tab that
  *           already has every week. A company opens its history, trend,
  *           next-week read and month totals.
@@ -58,6 +61,8 @@
     personFocus: null,
     holds: [], holdCols: [],
     holdSort: { col: "", dir: 1 },
+    hanger: [], hangerCols: [],
+    union: [], unionCols: [],
     volume: [], volumeCols: [],
     page: "summary",
   };
@@ -200,6 +205,8 @@
     const tTat = findTab("TAT Report");
     const tPerson = findTab("Prev Day by Person");
     const tHolds = findTab("On Hold External Detail");
+    const tHanger = findTab("Hanger Day 3+ TAT");
+    const tUnion = findTab("Union Day 3+ TAT");
     const tVolume = findTab("Company Volume Trends");
     if (!tSummary && !tDel) throw new Error(`This Sheet has no "Ops Summary" or "Delinquency by Station" tab. Is it the Ops Standup Sheet?`);
 
@@ -208,7 +215,8 @@
     const rangeOf = (tab, cols) => cols ? `${quoteTab(tab)}!${cols}` : quoteTab(tab);
     const wanted = [
       [tSummary, null], [tDel, null], [tDetail, null], [tNotes, null],
-      [tOts, "A:Q"], [tTat, "A:H"], [tPerson, null], [tHolds, null], [tVolume, null],
+      [tOts, "A:Q"], [tTat, "A:H"], [tPerson, null], [tHolds, null],
+      [tHanger, null], [tUnion, null], [tVolume, null],
     ].filter((pair) => pair[0]);
     const ranges = wanted.map(([tab, cols]) => "ranges=" + encodeURIComponent(rangeOf(tab, cols)));
     const data = await api(`${SHEETS_API}/${sheetId}/values:batchGet?${ranges.join("&")}&valueRenderOption=FORMATTED_VALUE`);
@@ -231,6 +239,12 @@
     state.holds = holds.rows;
     state.holdCols = holds.cols;
     state.holdSort = { col: "", dir: 1 };
+    const hanger = toObjects(byTab[tHanger] || []);
+    state.hanger = hanger.rows;
+    state.hangerCols = hanger.cols;
+    const union = toObjects(byTab[tUnion] || []);
+    state.union = union.rows;
+    state.unionCols = union.cols;
     const volume = toObjects(byTab[tVolume] || []);
     state.volume = volume.rows;
     state.volumeCols = volume.cols;
@@ -1272,6 +1286,97 @@
     host.appendChild(wrap);
   }
 
+  // ───────────────────────── Hanger / Union Day 3+ TAT ─────────────────────────
+  // Same columns as the Sheet. The day count colors the row: 3 light, 4 yellow,
+  // the 5th day orange, more than 5 days red. A PO opens its workbench.
+  function tatDayValue(v) {
+    const s = String(v == null ? "" : v).trim().replace(/,/g, "");
+    const m = s.match(/^(\d+(?:\.\d+)?)/);
+    return m ? Number(m[1]) : null;
+  }
+  function tatDayColumn(cols, rows) {
+    const key = (c) => String(c || "").toLowerCase().replace(/[_%]+/g, " ").replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+    const names = ["days", "day", "tat days", "days tat", "day count", "days open", "open days", "business days", "age", "tat"];
+    for (let i = 0; i < names.length; i++) {
+      const hit = cols.find((c) => key(c) === names[i]);
+      if (hit) return hit;
+    }
+    return cols.find((c) => /\b(day|days|tat)\b/.test(key(c)) && rows.some((r) => tatDayValue(r[c]) !== null)) || "";
+  }
+  function tatTone(n) {
+    if (n == null) return "";
+    if (n > 5) return "tat-over";
+    if (n >= 5) return "tat-5";
+    if (n >= 4) return "tat-4";
+    if (n >= 3) return "tat-3";
+    return "";
+  }
+  function renderTat(pageId, rows, cols, suffix) {
+    const host = $(pageId);
+    if (!host) return;
+    host.innerHTML = "";
+    const title = findTab(suffix) || suffix;
+    if (!cols.length) {
+      host.appendChild(el(`<div class="empty">No ${esc(suffix)} tab in this Sheet.</div>`));
+      return;
+    }
+    const dayCol = tatDayColumn(cols, rows);
+    const toneOf = (r) => tatTone(dayCol ? tatDayValue(r[dayCol]) : null);
+    const count = (tone) => rows.filter((r) => toneOf(r) === tone).length;
+    const legend = dayCol
+      ? `${count("tat-3")} on day 3 · ${count("tat-4")} on day 4 · ${count("tat-5")} on day 5 · ${count("tat-over")} past day 5. Click a PO to open its workbench.`
+      : "Click a PO to open its workbench.";
+    host.appendChild(el(`<div class="page-head"><h2>${esc(title)}</h2><span class="legend">${legend}</span></div>`));
+    const swatch = el(
+      `<div class="tat-key"><span class="tat-3">Day 3</span><span class="tat-4">Day 4</span><span class="tat-5">Day 5</span><span class="tat-over">More than 5 days</span></div>`
+    );
+    host.appendChild(swatch);
+    const wbIndex = workbenchIndex();
+    const wrap = el(`<div class="grid-wrap"></div>`);
+    const table = document.createElement("table");
+    table.className = "grid";
+    const thead = document.createElement("thead");
+    const hr = document.createElement("tr");
+    cols.forEach((c) => {
+      const th = document.createElement("th");
+      th.textContent = c;
+      hr.appendChild(th);
+    });
+    thead.appendChild(hr);
+    const tb = document.createElement("tbody");
+    rows.forEach((r) => {
+      const tr = document.createElement("tr");
+      const tone = toneOf(r);
+      if (tone) tr.classList.add(tone);
+      cols.forEach((c) => {
+        const td = document.createElement("td");
+        const text = r[c] == null ? "" : String(r[c]);
+        if (c === dayCol) td.classList.add("num");
+        const wb = text && isPoCol(c) ? holdWorkbench(r, text, wbIndex) : "";
+        if (wb) {
+          const a = document.createElement("a");
+          a.href = `${CFG.WORKBENCH_BASE}/${encodeURIComponent(wb)}`;
+          a.target = "_blank";
+          a.rel = "noopener";
+          a.className = "po-link";
+          a.textContent = text;
+          a.title = "Open the workbench for " + text;
+          td.appendChild(a);
+        } else {
+          td.textContent = text;
+          if (text) td.title = text;
+        }
+        tr.appendChild(td);
+      });
+      tb.appendChild(tr);
+    });
+    table.append(thead, tb);
+    wrap.appendChild(table);
+    host.appendChild(wrap);
+  }
+  function renderHanger() { renderTat("page-hanger", state.hanger, state.hangerCols, "Hanger Day 3+ TAT"); }
+  function renderUnion() { renderTat("page-union", state.union, state.unionCols, "Union Day 3+ TAT"); }
+
   // ───────────────────────── page 5: Company Volume Trends ─────────────────────────
   // The Sheet tab already has every week for every company. The table keeps
   // the present week and shows every column the Sheet has, with Orders as the
@@ -1909,6 +2014,8 @@
     $("page-delinquency").hidden = p !== "delinquency";
     $("page-people").hidden = p !== "people";
     $("page-holds").hidden = p !== "holds";
+    $("page-hanger").hidden = p !== "hanger";
+    $("page-union").hidden = p !== "union";
     $("page-volume").hidden = p !== "volume";
   }
 
@@ -1934,7 +2041,7 @@
       $("gate").hidden = true; $("tabs").hidden = false;
       $("pack-title").textContent = state.title;
       $("user").textContent = state.user; $("signout").hidden = false;
-      renderSummary(); renderDelinquency(); renderPeople(); renderHolds(); renderVolume();
+      renderSummary(); renderDelinquency(); renderPeople(); renderHolds(); renderHanger(); renderUnion(); renderVolume();
       showPage(state.delinquency.length && !state.summary.length ? "delinquency" : "summary");
     } catch (e) {
       err.textContent = e.message; err.hidden = false;
