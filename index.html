@@ -5,11 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow">
   <title>Ops Standup</title>
-  <link rel="stylesheet" href="styles.css?v=14">
+  <link rel="stylesheet" href="styles.css?v=15">
 </head>
 <body>
   <header class="topbar">
-    <div class="brand">Ops Standup</div>
+    <div class="topbar-row">
+      <div class="brand">Ops Standup</div>
+      <div class="spacer"></div>
+      <div class="pack" id="pack-title"></div>
+      <a class="sheet-link" id="sheet-link" target="_blank" rel="noopener" hidden>Open Sheet</a>
+      <div class="user" id="user"></div>
+      <button class="btn ghost" id="signout" hidden>Sign out</button>
+    </div>
     <nav class="tabs" id="tabs" hidden>
       <button class="tab active" data-page="summary">Ops Summary</button>
       <button class="tab" data-page="delinquency">Delinquency by Station</button>
@@ -19,11 +26,6 @@
       <button class="tab" data-page="union">Union Day 3+ TAT</button>
       <button class="tab" data-page="volume">Company Volume Trends</button>
     </nav>
-    <div class="spacer"></div>
-    <div class="pack" id="pack-title"></div>
-    <a class="sheet-link" id="sheet-link" target="_blank" rel="noopener" hidden>Open Sheet</a>
-    <div class="user" id="user"></div>
-    <button class="btn ghost" id="signout" hidden>Sign out</button>
   </header>
 
   <main id="main">
