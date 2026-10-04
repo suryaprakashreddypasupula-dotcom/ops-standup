@@ -715,6 +715,22 @@
     "NEEDS_SHIPPING": 180,
   };
   const WORK_HOURS = 7;
+  function hourlyUnits(station) {
+    const key = String(station || "").trim();
+    if (HOURLY_UNITS[key]) return HOURLY_UNITS[key];
+    const n = key.toLowerCase().replace(/_/g, " ").replace(/^needs /, "");
+    const live = {
+      printing: 30,
+      gluing: 20,
+      finishing: 25,
+      addon: 15,
+      "add on": 15,
+      "quality control": 30,
+      qc: 30,
+      shipping: 180,
+    };
+    return live[n] || 0;
+  }
   const STATION_LABELS = {
     "PRINTING": "Printing",
     "NEEDS_MANUFACTURING": "Manufacturing",
@@ -737,12 +753,66 @@
     return cleaned.replace(/\b[a-z]/g, (c) => c.toUpperCase());
   }
 
+  // These people stay on the Sheet. The scoreboard skips them.
+  // Match the mailbox owner (the text before +). A shared +vmakena tag on
+  // someone else's account is not Vmakena and stays on the board.
+  const HIDDEN_NAMES = [
+    "pedro sanchez",
+    "eric",
+    "luke birdeau",
+    "zach smith",
+    "suryaprakashreddy pasupula",
+    "charles lussier",
+    "varun addagulla",
+  ];
+
+  function nameKey(s) {
+    return String(s || "").toLowerCase().replace(/[._]+/g, " ").replace(/[^a-z0-9 +]/g, " ").replace(/\s+/g, " ").trim();
+  }
+
+  function mailboxOwner(who) {
+    let local = String(who || "").split("@")[0].trim();
+    const plus = local.indexOf("+");
+    if (plus > 0) local = local.slice(0, plus);
+    return nameKey(local);
+  }
+
+  function isHiddenPerson(who) {
+    const owner = mailboxOwner(who);
+    if (!owner) return false;
+    const squashed = owner.replace(/ /g, "");
+    if (HIDDEN_NAMES.some((name) => owner === name || squashed === name.replace(/ /g, ""))) return true;
+    return owner === "vmakena" || owner.startsWith("vmakena ");
+  }
+
+  function isUnknownPerson(who) {
+    const owner = mailboxOwner(who);
+    return !owner || owner === "unknown" || owner === "system" || owner === "printer automation";
+  }
+
+  function isDesignStation(station, group) {
+    return /\bdesign\b/i.test(String(station || "") + " " + String(group || ""));
+  }
+
+  function isPrintingStation(station) {
+    const s = String(station || "").trim().toLowerCase();
+    return s === "printing" || s === "print";
+  }
+
   function displayName(who) {
     let local = String(who || "").split("@")[0].trim();
-    if (local.includes("+")) local = local.split("+").pop();
+    const plus = local.indexOf("+");
+    if (plus > 0) local = local.slice(0, plus);
+    else if (plus === 0) local = local.slice(1);
     local = local.replace(/[._]+/g, " ").trim();
     if (!local) return "Unknown";
     return local.replace(/\b[a-z]/g, (c) => c.toUpperCase());
+  }
+
+  function boardName(station, who, group) {
+    if (isDesignStation(station, group)) return "Design";
+    if (isPrintingStation(station) && isUnknownPerson(who)) return "Printing";
+    return displayName(who);
   }
 
   function parseHm(label) {
@@ -839,10 +909,14 @@
       const station = String(row.station || "").trim();
       const who = String(row.completed_by || "").trim();
       if (!station || !who) return;
-      const key = station + "\n" + who.toLowerCase();
+      if (isHiddenPerson(who)) return;
+      const group = String(row.station_group || "").trim();
+      const label = boardName(station, who, group);
+      const bucket = (label === "Design" || label === "Printing") ? label : who;
+      const key = station + "\n" + bucket.toLowerCase();
       let person = grouped.get(key);
       if (!person) {
-        person = { station: station, who: who, days: dates.map((col) => ({ col: col, label: dateLabel(col), qty: 0, minutes: 0 })) };
+        person = { station: station, who: bucket, days: dates.map((col) => ({ col: col, label: dateLabel(col), qty: 0, minutes: 0 })) };
         grouped.set(key, person);
         if (!stationOrder.includes(station)) stationOrder.push(station);
       }
@@ -948,7 +1022,7 @@
       const row = block.querySelector(".profile-row");
       station.people.forEach((person) => {
         const qty = person.days[person.days.length - 1].qty;
-        const name = displayName(person.who);
+        const name = boardName(station.station, person.who);
         const btn = el(`<button type="button" class="profile"></button>`);
         if (!qty) btn.classList.add("zero");
         btn.setAttribute("aria-label", name + ", rank " + person.rank + " at " + station.label + ", " + qty + " insoles");
@@ -969,7 +1043,7 @@
   }
 
   function renderPersonDetail(host, board, station, person) {
-    const name = displayName(person.who);
+    const name = boardName(station.station, person.who);
     const qty = person.days[person.days.length - 1].qty;
     const dir = directionLine(person.days);
     host.appendChild(el(`<div class="page-head"><h2>${esc(name)}</h2><span class="legend">${esc(station.label)} · rank ${person.rank} · ${qty} insoles on ${esc(board.day)}</span></div>`));
@@ -981,7 +1055,7 @@
     chart.querySelector(".chart-scroll").appendChild(trendChart(person.days));
     host.appendChild(chart);
 
-    const perHour = HOURLY_UNITS[station.station];
+    const perHour = hourlyUnits(station.station);
     if (perHour) {
       const target = perHour * WORK_HOURS;
       const gap = qty - target;
