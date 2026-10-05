@@ -1104,7 +1104,7 @@
   }
 
   // These people stay on the Sheet. The scoreboard skips them.
-  // yatesh.makena+james.burhans is James Burhans. Anyone else after that
+  // yatesh.makena+james.burhans shows as James Burhans. Anyone else after that
   // plus stays. A +vmakena tag on another mailbox is not Vmakena.
   const HIDDEN_NAMES = [
     "pedro sanchez",
@@ -1114,7 +1114,6 @@
     "suryaprakashreddy pasupula",
     "charles lussier",
     "varun addagulla",
-    "james burhans",
   ];
 
   function nameKey(s) {
