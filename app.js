@@ -56,7 +56,7 @@
     user: "", sheetId: "", title: "", tabs: [],
     summary: [], summaryCols: [],
     delinquency: [], delinquencyCols: [],
-    detail: [], detailCols: [], notes: [],
+    detail: [], detailCols: [], notes: [], quality: [],
     reports: {},
     orders: [],
     byPerson: [], byPersonCols: [],
@@ -244,6 +244,7 @@
     const tHanger = findTab("Hanger Day 3+ TAT");
     const tUnion = findTab("Union Day 3+ TAT");
     const tVolume = findTab("Company Volume Trends");
+    const tQuality = findTab("Quality Detail");
     if (!tSummary && !tDel) throw new Error(`This Sheet has no "Ops Summary" or "Delinquency by Station" tab. Is it the Ops Standup Sheet?`);
 
     // OTS and TAT are read in full. Their own tabs show every column the
@@ -252,7 +253,7 @@
     const wanted = [
       [tSummary, null], [tDel, null], [tDetail, null], [tNotes, null],
       [tOts, null], [tTat, null], [tPerson, null], [tHolds, null],
-      [tHanger, null], [tUnion, null], [tVolume, null],
+      [tHanger, null], [tUnion, null], [tVolume, null], [tQuality, null],
     ].filter((pair) => pair[0]);
     const ranges = wanted.map(([tab, cols]) => "ranges=" + encodeURIComponent(rangeOf(tab, cols)));
     const data = await api(`${SHEETS_API}/${sheetId}/values:batchGet?${ranges.join("&")}&valueRenderOption=FORMATTED_VALUE`);
@@ -292,6 +293,7 @@
     const volume = toObjects(byTab[tVolume] || []);
     state.volume = volume.rows;
     state.volumeCols = volume.cols;
+    state.quality = toObjects(byTab[tQuality] || []).rows;
     state.hasDetail = !!tDetail;
     state.hasNotes = !!tNotes;
     await loadNoteColors([
@@ -418,9 +420,9 @@
   // Ops Summary value → the orders already listed on OTS Report / TAT Report.
   // Only Last 2d opens. Last 7d / 14d / 30d stay plain numbers. Count cells
   // (OTS On Time, 1d Late, …) are that ship class. A compliance percent opens
-  // the orders that missed that station. Quality rates have no order tab on
-  // this Sheet, so those numbers stay as they are. The pack build is not
-  // changed by this page.
+  // the orders that missed that station. Quality rates open the insoles on
+  // the Quality Detail tab (every timeframe), one row per order + side, with
+  // reason, source and workbench link. The pack build is not changed by this page.
   function isLast2d(tf) {
     const s = String(tf || "").trim().toLowerCase();
     return s === "last 2d" || s === "last 2bd";
@@ -475,6 +477,29 @@
   function ordersForMetric(row) {
     if (!isLast2d(row.timeframe)) return [];
     return state.orders.filter((d) => d.timeframe === row.timeframe && d.factory === row.factory && d.metric === row.metric);
+  }
+
+  // Quality Detail rows behind an Ops Summary quality percent. One row is one
+  // insole (order + side). Matched on timeframe, factory and metric name.
+  const same = (a, b) => String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
+  function insolesForMetric(row) {
+    if (!state.quality || !state.quality.length) return [];
+    return state.quality
+      .filter((q) => same(q.timeframe, row.timeframe) && same(q.factory, row.factory) && same(q.metric, row.metric))
+      .map((q) => {
+        const pills = [];
+        if (q.side) pills.push(String(q.side));
+        if (q.rejection_reasons) pills.push(String(q.rejection_reasons));
+        const meta = [];
+        if (q.sources) meta.push(`source: ${q.sources}`);
+        if (q.device_type) meta.push(String(q.device_type));
+        if (q.printer_numbers) meta.push(`printer ${q.printer_numbers}`);
+        return {
+          timeframe: q.timeframe || "", factory: q.factory || "", metric: q.metric || "",
+          po_number: q.po_number || q.order_id || "", workbench_id: q.workbench_id || "",
+          company_name: q.company_name || "", pills, meta: meta.join(" · "),
+        };
+      });
   }
 
   async function ensureNotesTab() {
@@ -824,10 +849,15 @@
         if (c === "value" && num(v) !== null) {
           td.className = "num"; td.textContent = v;
           const list = ordersForMetric(r);
+          const insoles = list.length ? [] : insolesForMetric(r);
           if (list.length && num(v) !== 0) {
             td.classList.add("drill");
             td.title = "Show the orders behind this number";
-            td.onclick = () => openSummaryDrawer(r, list);
+            td.onclick = () => openSummaryDrawer(r, list, "order");
+          } else if (insoles.length && num(v) !== 0) {
+            td.classList.add("drill");
+            td.title = `Show the ${insoles.length} insole${insoles.length === 1 ? "" : "s"} behind this number`;
+            td.onclick = () => openSummaryDrawer(r, insoles, "insole");
           }
         }
         else { td.textContent = v; if (c === "metric") td.className = "text"; }
@@ -987,11 +1017,13 @@
 
     $("drawer").hidden = false; $("scrim").hidden = false;
   }
-  function openSummaryDrawer(row, list) {
+  function openSummaryDrawer(row, list, unit) {
+    unit = unit || "order";
     const gridN = num(row.value);
     const countMetric = COUNT_METRICS.has(row.metric);
     $("drawer-title").textContent = `${row.factory} · ${row.metric}`;
-    let sub = `${row.timeframe}: ${list.length} order${list.length === 1 ? "" : "s"}`;
+    let sub = `${row.timeframe}: ${list.length} ${unit}${list.length === 1 ? "" : "s"}`;
+    if (unit === "insole") sub += ` behind ${row.value}%`;
     if (countMetric && gridN !== null && gridN !== list.length) {
       sub += ` (the cell shows ${gridN})`;
     }
@@ -1017,14 +1049,18 @@
     };
     paintMetric();
     body.appendChild(metricBox);
-    body.appendChild(el(`<div class="section-title">Orders</div>`));
+    body.appendChild(el(`<div class="section-title">${unit === "insole" ? "Insoles" : "Orders"}</div>`));
 
     list.forEach((d) => {
       const card = el(`<div class="po-card"></div>`);
       const wbUrl = d.workbench_id ? `${CFG.WORKBENCH_BASE}/${encodeURIComponent(d.workbench_id)}` : "";
       const poHtml = wbUrl ? `<a href="${wbUrl}" target="_blank" rel="noopener">${esc(d.po_number)}</a>` : `<b>${esc(d.po_number)}</b>`;
-      card.appendChild(el(`<div class="po-head">${poHtml}${d.detail ? ` <span class="pill">${esc(d.detail)}</span>` : ""}</div>`));
-      if (d.company_name) card.appendChild(el(`<div class="po-meta"><b>${esc(d.company_name)}</b></div>`));
+      const pills = (d.pills || (d.detail ? [d.detail] : [])).map((p) => ` <span class="pill">${esc(p)}</span>`).join("");
+      card.appendChild(el(`<div class="po-head">${poHtml}${pills}</div>`));
+      const meta = [];
+      if (d.company_name) meta.push(`<b>${esc(d.company_name)}</b>`);
+      if (d.meta) meta.push(esc(d.meta));
+      if (meta.length) card.appendChild(el(`<div class="po-meta">${meta.join(" · ")}</div>`));
       const notesDiv = el(`<div class="po-notes"></div>`); const act = el(`<div class="po-actions"></div>`);
       const paint = () => {
         const ns = notesForSummaryPo(row, d.po_number);

@@ -26,6 +26,21 @@
       ["Last 7d", "SOLEFORGE", "OTD", "Printing Compliance %", 88.0],
       ["Last 7d", "SOLEMATE", "OTD", "OTS 1d Late", 1],
       ["Last 7d", "SOLEMATE", "OTD", "Printing Compliance %", 74.9],
+      ["Last 7d", "SOLEMATE", "Quality", "Scrap %", 5.34],
+    ],
+    // One row per insole behind the Quality percents above (sits after Notes on the real pack).
+    [`${P} Quality Detail`]: [
+      ["timeframe", "factory", "metric", "po_number", "workbench_id", "order_id", "side", "company_name", "device_type", "printer_numbers", "sources", "rejection_reasons"],
+      ["Last 2d", "SOLEFORGE", "Overall Reject Rate", "demo-q-1", "wb-demo-q-1", "ord-q-1", "Left", "Sample Clinic A", "Form", "P3", "QC", "Delamination"],
+      ["Last 2d", "SOLEFORGE", "Overall Reject Rate", "demo-q-1", "wb-demo-q-1", "ord-q-1", "Right", "Sample Clinic A", "Form", "P3", "QC", "Delamination"],
+      ["Last 2d", "SOLEFORGE", "Overall Reject Rate", "demo-q-2", "wb-demo-q-2", "ord-q-2", "Left", "Demo Orthotics", "Sport", "P7", "Post-print QA", "Warped base"],
+      ["Last 2d", "SOLEFORGE", "Printing Scrap %", "demo-q-3", "wb-demo-q-3", "ord-q-3", "Right", "Example Foot Care", "Form", "P2", "Printing", "Layer shift"],
+      ["Last 2d", "SOLEFORGE", "Printing Scrap %", "demo-q-4", "", "ord-q-4", "Left", "Sample Clinic B", "Form", "P5", "Printing", "Nozzle clog"],
+      ["Last 2d", "SOLEMATE", "Overall Reject Rate", "demo-q-5", "wb-demo-q-5", "ord-q-5", "Left", "Sample Clinic B", "Form", "P11", "QC", "Top cover bubble"],
+      ["Last 2d", "SOLEMATE", "Overall Reject Rate", "demo-q-6", "wb-demo-q-6", "ord-q-6", "Right", "Demo Orthotics", "Sport", "P12", "Shipping", "Wrong size"],
+      ["Last 7d", "SOLEMATE", "Scrap %", "demo-q-7", "wb-demo-q-7", "ord-q-7", "Left", "Sample Clinic A", "Form", "P11", "Printing", "Layer shift"],
+      ["Last 7d", "SOLEMATE", "Scrap %", "demo-q-7", "wb-demo-q-7", "ord-q-7", "Right", "Sample Clinic A", "Form", "P11", "Printing", "Layer shift"],
+      ["Last 7d", "SOLEMATE", "Scrap %", "demo-q-8", "wb-demo-q-8", "ord-q-8", "Left", "Example Foot Care", "Sport", "P14", "Post-print QA", "Warped base"],
     ],
     [`${P} Delinquency by Station`]: [
       ["factory", "station_group", "status", "wip", "customer_overdue", "Step overdue", "due_today", "on_track", "completed_yesterday", "completed_2_days_ago", "rejected_yesterday", "rejected_2_days_ago"],
