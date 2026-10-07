@@ -247,7 +247,20 @@ table.grid td.notecell { vertical-align: top; }
 .bar-date { font-size: 11px; fill: var(--text); font-family: inherit; }
 .bar-time { font-size: 10px; fill: var(--muted); font-family: inherit; }
 
-/* On Hold External only. Other pages keep the grid they already have. */
+/* Grid pages fill the window and the table scrolls inside its card, so the
+   column headings stay pinned under the tabs while the rows move. */
+#page-summary, #page-delinquency, #page-ots, #page-tat, #page-hanger, #page-union {
+  display: flex; flex-direction: column; min-height: 0;
+  height: calc(100vh - var(--chrome));
+  margin: -16px -20px -40px; padding: 16px 20px 12px;
+}
+#page-summary .grid-wrap, #page-delinquency .grid-wrap, #page-ots .grid-wrap, #page-tat .grid-wrap,
+#page-hanger .grid-wrap, #page-union .grid-wrap { flex: 1; min-height: 0; overflow: auto; }
+#page-summary .page-head, #page-delinquency .page-head, #page-ots .page-head, #page-tat .page-head,
+#page-hanger .page-head, #page-union .page-head, .report-bar, .tat-key { flex: none; }
+table.grid th { box-shadow: 0 1px 0 var(--border); }
+
+/* On Hold External: same shell, plus its own column tools. */
 #page-holds {
   display: flex; flex-direction: column; min-height: 0;
   height: calc(100vh - var(--chrome));
@@ -322,7 +335,6 @@ table.grid td.notecell { vertical-align: top; }
 #page-hanger tr.tat-over td, #page-union tr.tat-over td, .tat-key .tat-over { background: #ef9a9a; }
 
 /* OTS Report / TAT Report only. Sheet columns with sort + filter per heading. */
-#page-ots .grid-wrap, #page-tat .grid-wrap { overflow: auto; max-height: calc(100vh - var(--chrome) - 150px); }
 #page-ots table.grid, #page-tat table.grid { min-width: 0; width: max-content; }
 #page-ots a.po-link, #page-tat a.po-link { color: var(--link); font-weight: 600; text-decoration: none; }
 #page-ots a.po-link:hover, #page-tat a.po-link:hover { text-decoration: underline; }
