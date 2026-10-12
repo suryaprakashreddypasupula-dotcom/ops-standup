@@ -212,6 +212,25 @@
   volTab.push(["Sample Clinic A", "Clinical", "10/5/2026", 99, 48, "106.3%", 200, 140, "42.9%"]);
   TABS[`${P} Company Volume Trends`] = volTab;
 
+  // The ad-hoc "Rejections by Person by Day" workbook. Same columns the real
+  // pivot writes: person, email, station, then the 7 calendar days, then Total.
+  // By Reason adds rejection_reason. Counts are made up, like the rest of demo.
+  const REJ = {
+    "Rejections by Person by Day": [
+      ["person", "person_email", "responsible_station", "Sep 23", "Sep 24", "Sep 25", "Sep 26", "Sep 27", "Sep 28", "Sep 29", "Total"],
+      ["Nola Brooks", "nola.brooks@example.com", "Finishing", 0, 0, 2, 0, 0, 4, 0, 6],
+      ["Alex Rivera", "alex.rivera@example.com", "Gluing", 0, 0, 0, 0, 0, 3, 0, 3],
+      ["TOTAL", "", "", 0, 0, 2, 0, 0, 7, 0, 9],
+    ],
+    "By Reason": [
+      ["person", "person_email", "responsible_station", "rejection_reason", "Sep 23", "Sep 24", "Sep 25", "Sep 26", "Sep 27", "Sep 28", "Sep 29", "Total"],
+      ["Nola Brooks", "nola.brooks@example.com", "Finishing", "Improper finishing", 0, 0, 0, 0, 0, 4, 0, 4],
+      ["Nola Brooks", "nola.brooks@example.com", "Finishing", "Heel roll", 0, 0, 2, 0, 0, 0, 0, 2],
+      ["Alex Rivera", "alex.rivera@example.com", "Gluing", "Delamination", 0, 0, 0, 0, 0, 3, 0, 3],
+      ["TOTAL", "", "", "", 0, 0, 2, 0, 0, 7, 0, 9],
+    ],
+  };
+
   function unq(name) { return name.replace(/^'|'$/g, "").replace(/''/g, "'"); }
   // Text color runs per cell, like the real Sheet keeps them. Key: tab\trow\tcol (0-based).
   const RUNS = new Map();
@@ -224,6 +243,16 @@
     async handle(url, opts) {
       await new Promise((r) => setTimeout(r, 120));
       if (url.includes("/oauth2/v3/userinfo")) return { email: "you@pebblehealth.io" };
+      if (url.includes("/drive/v3/files") && /Rejections by Person/i.test(decodeURIComponent(url))) {
+        return { files: [{ id: "rej-demo", name: "Rejections by Person by Day", createdTime: "2026-09-29T12:00:00Z" }] };
+      }
+      if (/\/spreadsheets\/rej-demo\?fields=/.test(url)) {
+        return { properties: { title: "Rejections by Person by Day (demo)" }, sheets: Object.keys(REJ).map((t) => ({ properties: { title: t } })) };
+      }
+      if (url.includes("/spreadsheets/rej-demo/values:batchGet")) {
+        const ranges = [...new URL(url).searchParams.getAll("ranges")].map((t) => unq(t.split("!")[0]));
+        return { valueRanges: ranges.map((t) => ({ range: `'${t}'!A1:Z`, values: REJ[t] || [] })) };
+      }
       if (/\/spreadsheets\/demo\?fields=/.test(url)) {
         return { properties: { title: `${P} Ops Standup (demo)` }, sheets: tabNames().map((t, i) => ({ properties: { title: t, sheetId: i + 1, gridProperties: { columnCount: (TABS[t][0] || []).length } } })) };
       }

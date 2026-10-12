@@ -60,7 +60,7 @@
     reports: {},
     orders: [],
     byPerson: [], byPersonCols: [],
-    personFocus: null,
+    personFocus: null, rejections: { ok: false, rows: [] },
     holds: [], holdCols: [],
     holdSort: { col: "", dir: 1 },
     hanger: [], hangerCols: [],
@@ -1464,6 +1464,140 @@
     return { kind: "flat", text: "Flat vs " + prev.label };
   }
 
+  // Rejections by Person by Day is its own Sheet on Drive (an ad-hoc workbook).
+  // Reading it is optional: a miss leaves Prev Day exactly as it is.
+  const MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+  function monthNameDay(label) {
+    const named = String(label || "").trim().match(/^([A-Za-z]+)\s+(\d{1,2})$/);
+    if (named) {
+      const month = MONTHS[named[1].slice(0, 3).toLowerCase()];
+      return month ? { month: month, day: Number(named[2]) } : null;
+    }
+    return monthDay(label);
+  }
+  function sameDay(a, b) { return !!a && !!b && a.month === b.month && a.day === b.day; }
+  function rejectionStationMatches(responsible, station) {
+    const r = String(responsible || "").trim().toLowerCase();
+    const s = String(station || "").trim().toUpperCase();
+    if (r === "design") return isDesignStation(station, "");
+    if (r === "printing") return isPrintingStation(station) || s === "NEEDS_MANUFACTURING";
+    if (r === "grinding") return s === "NEEDS_GRINDING";
+    if (r === "gluing") return s === "NEEDS_GLUING";
+    if (r === "finishing") return s === "NEEDS_FINISHING";
+    if (r === "qc" || r === "quality control") return s === "NEEDS_QUALITY_CONTROL";
+    if (r === "shipping") return s === "NEEDS_SHIPPING" || s === "NEEDS_SHIPPING_INTERNAL";
+    return false;
+  }
+  function parseRejectionGrid(values) {
+    if (!values || values.length < 2) return [];
+    const header = values[0].map((c) => String(c == null ? "" : c).trim());
+    const at = (name) => header.findIndex((h) => h.toLowerCase() === name);
+    const iPerson = at("person");
+    const iEmail = at("person_email");
+    const iStation = at("responsible_station");
+    const iReason = at("rejection_reason");
+    const iTotal = at("total");
+    if (iPerson < 0) return [];
+    const days = [];
+    header.forEach((h, i) => {
+      if ([iPerson, iEmail, iStation, iReason, iTotal].includes(i)) return;
+      const md = monthNameDay(h);
+      if (md) days.push({ i: i, label: h, md: md });
+    });
+    const rows = [];
+    for (let r = 1; r < values.length; r++) {
+      const line = values[r] || [];
+      const person = String(line[iPerson] == null ? "" : line[iPerson]).trim();
+      if (!person || person.toUpperCase() === "TOTAL") continue;
+      rows.push({
+        email: iEmail >= 0 ? String(line[iEmail] == null ? "" : line[iEmail]).trim() : "",
+        name: person,
+        station: iStation >= 0 ? String(line[iStation] == null ? "" : line[iStation]).trim() : "",
+        reason: iReason >= 0 ? String(line[iReason] == null ? "" : line[iReason]).trim() : "",
+        days: days.map((d) => ({ label: d.label, md: d.md, qty: Math.max(0, Math.round(num(line[d.i]) || 0)) })),
+      });
+    }
+    return rows;
+  }
+  async function readRejectionBook(sheetId) {
+    const meta = await api(`${SHEETS_API}/${sheetId}?fields=properties.title,sheets.properties.title`);
+    const tabs = (meta.sheets || []).map((s) => s.properties.title);
+    const reasonTab = tabs.find((t) => t === "By Reason" || t.endsWith(" By Reason"));
+    const personTab = tabs.find((t) => t === "Rejections by Person by Day" || t.endsWith(" Rejections by Person by Day"));
+    const wanted = [reasonTab, personTab].filter(Boolean);
+    if (!wanted.length) return null;
+    const ranges = wanted.map((t) => "ranges=" + encodeURIComponent(quoteTab(t)));
+    const data = await api(`${SHEETS_API}/${sheetId}/values:batchGet?${ranges.join("&")}&valueRenderOption=FORMATTED_VALUE`);
+    const byTab = {};
+    (data.valueRanges || []).forEach((vr, i) => { byTab[wanted[i]] = vr.values || []; });
+    const reasonRows = reasonTab ? parseRejectionGrid(byTab[reasonTab]) : [];
+    const personRows = personTab ? parseRejectionGrid(byTab[personTab]) : [];
+    const rows = reasonRows.some((r) => r.reason) ? reasonRows : (reasonRows.length ? reasonRows : personRows);
+    return { title: (meta.properties && meta.properties.title) || "", rows: rows };
+  }
+  async function loadPersonRejections() {
+    state.rejections = { ok: false, rows: [] };
+    try {
+      const onPack = findTab("Rejections by Person by Day") || findTab("By Reason");
+      let book = null;
+      if (onPack) book = await readRejectionBook(state.sheetId);
+      if (!book) {
+        const q = "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false and name contains 'Rejections by Person'";
+        const url = "https://www.googleapis.com/drive/v3/files?pageSize=10&orderBy=createdTime desc"
+          + "&fields=files(id,name,createdTime)&supportsAllDrives=true&includeItemsFromAllDrives=true"
+          + "&q=" + encodeURIComponent(q);
+        const data = await api(url);
+        const files = (data.files || []).filter((f) => /Rejections by Person/i.test(f.name || ""));
+        files.sort((a, b) => String(b.createdTime || "").localeCompare(String(a.createdTime || "")));
+        if (files.length) book = await readRejectionBook(files[0].id);
+      }
+      if (book && book.rows.length) state.rejections = { ok: true, title: book.title, rows: book.rows };
+    } catch (_) { /* the scoreboard does not depend on this Sheet */ }
+  }
+  function rejectionRowsFor(who, station) {
+    const rows = (state.rejections && state.rejections.rows) || [];
+    const mine = rows.filter((r) => samePerson(r.email || r.name, who));
+    return {
+      here: station ? mine.filter((r) => rejectionStationMatches(r.station, station)) : mine,
+      elsewhere: station ? mine.filter((r) => r.station && !rejectionStationMatches(r.station, station)) : [],
+    };
+  }
+  function rejectionSummary(rows) {
+    const dayMap = new Map();
+    const reasons = new Map();
+    rows.forEach((r) => {
+      let rowQty = 0;
+      r.days.forEach((d) => {
+        rowQty += d.qty;
+        const key = d.md.month + "/" + d.md.day;
+        const cur = dayMap.get(key) || { label: d.label, md: d.md, qty: 0 };
+        cur.qty += d.qty;
+        dayMap.set(key, cur);
+      });
+      if (r.reason) reasons.set(r.reason, (reasons.get(r.reason) || 0) + rowQty);
+    });
+    const days = [...dayMap.values()].sort((a, b) => (a.md.month - b.md.month) || (a.md.day - b.md.day));
+    const rejected = days.reduce((sum, d) => sum + d.qty, 0);
+    const reasonList = [...reasons.entries()].map(([reason, qty]) => ({ reason: reason, qty: qty })).sort((a, b) => b.qty - a.qty || a.reason.localeCompare(b.reason));
+    return { days: days, rejected: rejected, reasons: reasonList };
+  }
+  function completedOnRejectionDays(person, days) {
+    let qty = 0;
+    let matched = false;
+    (person.days || []).forEach((d) => {
+      const md = monthDay(d.col);
+      if (!days.some((w) => sameDay(w.md, md))) return;
+      matched = true;
+      qty += d.qty;
+    });
+    return matched ? qty : null;
+  }
+  function rateLabel(part, whole) {
+    if (!whole) return "";
+    const rounded = Math.round((1000 * part) / whole) / 10;
+    return (rounded % 1 === 0 ? String(rounded.toFixed(0)) : String(rounded)) + "%";
+  }
+
   function renderPeople() {
     const host = $("page-people");
     host.innerHTML = "";
@@ -1496,9 +1630,13 @@
         btn.appendChild(el(`<span class="who">${esc(name)}</span>`));
         btn.appendChild(el(`<span class="score">${qty}</span>`));
         btn.appendChild(el(`<span class="unit">insoles</span>`));
+        if (state.rejections && state.rejections.ok) {
+          const sent = rejectionSummary(rejectionRowsFor(person.who, station.station).here).rejected;
+          if (sent) btn.appendChild(el(`<span class="unit sent-back">${sent} sent back</span>`));
+        }
         if (notesForPerson(station.station, person.who).length) btn.appendChild(el(`<span class="badge">note</span>`));
         btn.onclick = () => {
-          state.personFocus = { station: station.station, who: person.who.toLowerCase() };
+          state.personFocus = { station: station.station, who: person.who.toLowerCase(), pane: "work" };
           renderPeople();
           window.scrollTo(0, 0);
         };
@@ -1547,6 +1685,20 @@
     const back = el(`<button type="button" class="btn back-board">Back to scoreboard</button>`);
     back.onclick = () => { state.personFocus = null; renderPeople(); };
     host.appendChild(back);
+    const sentHere = state.rejections && state.rejections.ok ? rejectionSummary(rejectionRowsFor(person.who, station.station).here).rejected : 0;
+    const switcher = el(`<div class="profile-switch" role="tablist"></div>`);
+    [["work", "Output"], ["rejections", "Rejections"]].forEach(([pane, label]) => {
+      const tab = el(`<button type="button" role="tab">${esc(label)}</button>`);
+      if ((state.personFocus.pane || "work") === pane) tab.setAttribute("aria-selected", "true");
+      if (pane === "rejections" && sentHere) tab.appendChild(el(`<span class="switch-count">${sentHere}</span>`));
+      tab.onclick = () => { state.personFocus.pane = pane; renderPeople(); };
+      switcher.appendChild(tab);
+    });
+    host.appendChild(switcher);
+    if ((state.personFocus.pane || "work") === "rejections") {
+      host.appendChild(renderRejectionPane(person, station, name));
+      return;
+    }
     if (dir) host.appendChild(el(`<p class="direction direction-${dir.kind}">${esc(dir.text)}</p>`));
     const chart = el(`<div class="chart-card"><div class="chart-title">${esc(name)} · insoles by day</div><div class="chart-scroll"></div></div>`);
     chart.querySelector(".chart-scroll").appendChild(series.length > 1 ? trendChartStacked(series) : trendChart(person.days));
@@ -1634,6 +1786,64 @@
     };
     paint();
     host.appendChild(noteCard);
+  }
+
+  function renderRejectionPane(person, station, name) {
+    const pane = el(`<div class="rej-pane"></div>`);
+    if (!state.rejections || !state.rejections.ok) {
+      pane.appendChild(el(`<div class="chart-card rej-card"><div class="chart-title">Rejections · last 7 days</div><p class="muted">The Rejections by Person sheet is not on Drive for this account. Output on this profile is unchanged.</p></div>`));
+      return pane;
+    }
+    const split = rejectionRowsFor(person.who, station.station);
+    const view = rejectionSummary(split.here);
+    const card = el(`<div class="chart-card rej-card"></div>`);
+    card.appendChild(el(`<div class="chart-title">Rejections · last 7 days · ${esc(station.label)}</div>`));
+    if (!view.rejected) {
+      card.appendChild(el(`<p class="rej-clear">Nothing was sent back to ${esc(name)} at ${esc(station.label)} in these 7 days.</p>`));
+    } else {
+      const completed = completedOnRejectionDays(person, view.days);
+      const rate = completed ? rateLabel(view.rejected, completed) : "";
+      const hero = el(`<div class="rej-hero"></div>`);
+      hero.appendChild(el(`<div class="rej-rate">${rate || String(view.rejected)}</div>`));
+      const copy = el(`<div></div>`);
+      copy.appendChild(el(`<div class="rej-rate-title">${rate ? "Rejection rate" : "Insoles sent back"}</div>`));
+      const line = rate
+        ? `${view.rejected} sent back out of ${completed} completed on these days.`
+        : `${view.rejected} sent back. Completed counts for these days are not on Prev Day by Person, so there is no rate.`;
+      copy.appendChild(el(`<p class="muted">${esc(line)}</p>`));
+      hero.appendChild(copy);
+      card.appendChild(hero);
+      const maxDay = Math.max.apply(null, view.days.map((d) => d.qty).concat([1]));
+      const days = el(`<div class="rej-days"></div>`);
+      view.days.forEach((d) => {
+        const col = el(`<div class="rej-day"></div>`);
+        col.appendChild(el(`<span class="rej-qty">${d.qty || ""}</span>`));
+        const track = el(`<div class="rej-track"></div>`);
+        const h = d.qty ? Math.max(4, Math.round((d.qty / maxDay) * 72)) : 0;
+        track.appendChild(el(`<div class="rej-fill" style="height:${h}px"></div>`));
+        col.appendChild(track);
+        col.appendChild(el(`<span class="rej-label">${esc(d.label)}</span>`));
+        days.appendChild(col);
+      });
+      card.appendChild(days);
+      if (view.reasons.length) {
+        card.appendChild(el(`<div class="rej-sub">What was sent back</div>`));
+        const maxReason = view.reasons[0].qty || 1;
+        view.reasons.forEach((r) => {
+          const row = el(`<div class="rej-reason"></div>`);
+          row.appendChild(el(`<div class="rej-reason-top"><span>${esc(r.reason)}</span><b>${r.qty}</b></div>`));
+          row.appendChild(el(`<div class="rej-reason-track"><div style="width:${Math.max(4, Math.round((r.qty / maxReason) * 100))}%"></div></div>`));
+          card.appendChild(row);
+        });
+      }
+    }
+    const other = rejectionSummary(split.elsewhere);
+    if (other.rejected) {
+      const stations = [...new Set(split.elsewhere.map((r) => r.station).filter(Boolean))];
+      card.appendChild(el(`<p class="muted small">${other.rejected} more ${other.rejected === 1 ? "insole was" : "insoles were"} sent back from ${esc(stations.join(", ") || "another station")}.</p>`));
+    }
+    pane.appendChild(card);
+    return pane;
   }
 
   // ───────────────────────── page 4: On Hold External Detail ─────────────────────────
@@ -2933,6 +3143,7 @@
       btn.textContent = "Loading Sheet…";
       state.sheetId = sheetId;
       await loadSheet(sheetId);
+      await loadPersonRejections();
       if (!state.demo) {
         // Do not remember the id. The next visit must resolve the newest pack.
         const link = $("sheet-link"); link.href = `https://docs.google.com/spreadsheets/d/${sheetId}`; link.hidden = false;

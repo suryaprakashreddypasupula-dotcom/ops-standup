@@ -214,6 +214,37 @@ table.grid td.notecell { vertical-align: top; }
 .profile.zero .score { color: var(--muted); font-weight: 600; }
 
 .back-board { margin: 0 0 12px; }
+.profile .sent-back { color: #9a3412; font-weight: 600; }
+.profile-switch { display: flex; gap: 4px; margin: 0 0 14px; }
+.profile-switch button {
+  font: inherit; font-size: 13px; font-weight: 600; color: var(--muted);
+  background: transparent; border: 0; border-bottom: 2px solid transparent;
+  padding: 8px 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+}
+.profile-switch button[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+.profile-switch .switch-count {
+  min-width: 16px; padding: 0 5px; border-radius: 9px; background: #ffedd5; color: #9a3412;
+  font-size: 11px; font-weight: 700;
+}
+.rej-pane { max-width: 720px; }
+.rej-card { padding-bottom: 16px; }
+.rej-clear { margin: 4px 0 8px; font-size: 15px; }
+.rej-hero { display: flex; align-items: center; gap: 16px; margin: 4px 0 16px; }
+.rej-rate { font-size: 40px; font-weight: 700; letter-spacing: -.03em; line-height: 1; color: #9a3412; font-variant-numeric: tabular-nums; }
+.rej-rate-title { font-weight: 700; margin-bottom: 2px; }
+.rej-hero p { margin: 0; }
+.rej-days { display: flex; align-items: flex-end; gap: 8px; margin: 0 0 16px; }
+.rej-day { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
+.rej-qty { font-size: 12px; font-weight: 700; min-height: 16px; font-variant-numeric: tabular-nums; }
+.rej-track { height: 72px; width: 100%; max-width: 36px; display: flex; align-items: flex-end; }
+.rej-fill { width: 100%; background: #c2410c; border-radius: 4px 4px 0 0; }
+.rej-label { font-size: 11px; color: var(--muted); text-align: center; }
+.rej-sub { font-weight: 700; margin: 4px 0 8px; }
+.rej-reason { margin: 0 0 8px; }
+.rej-reason-top { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
+.rej-reason-top b { font-variant-numeric: tabular-nums; }
+.rej-reason-track { height: 6px; border-radius: 3px; background: #eef2f6; margin-top: 4px; }
+.rej-reason-track div { height: 100%; border-radius: 3px; background: #c2410c; }
 .direction { margin: 0 0 12px; font-size: 15px; font-weight: 700; }
 .direction-up { color: #1b7f4a; }
 .direction-down { color: var(--danger); }
