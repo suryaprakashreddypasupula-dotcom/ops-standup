@@ -144,6 +144,7 @@
     if (ds === "Needs Shipping") return "NEEDS_SHIPPING";
     if (ds === "Needs Shoes") return "NEEDS_MATCHING";
     if (ds === "Awaiting Shipment") return "AWAITING_SHIPMENT";
+    if (ds === "Needs Binning") return "NEEDS_BINNING";
     if (ds.startsWith("Anodyne Factory")) return "TOE_FILLER";
     return ds;
   }
@@ -1092,13 +1093,12 @@
   // No orders, notes, or workbench. Ops Summary and Delinquency are not used here.
   // Units per hour. A day is 7 hours of work (8 hours with a 1 hour break).
   // The daily target is this rate times 7. Shown only on an open profile.
+  // Shipping and QC stay as insole counts with no target.
   const HOURLY_UNITS = {
     "PRINTING": 30,
     "NEEDS_GLUING": 20,
     "NEEDS_FINISHING": 25,
     "NEEDS_ADDON": 15,
-    "NEEDS_QUALITY_CONTROL": 30,
-    "NEEDS_SHIPPING": 180,
   };
   const WORK_HOURS = 7;
   function hourlyUnits(station) {
@@ -1111,9 +1111,6 @@
       finishing: 25,
       addon: 15,
       "add on": 15,
-      "quality control": 30,
-      qc: 30,
-      shipping: 180,
     };
     return live[n] || 0;
   }
