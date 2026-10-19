@@ -1128,6 +1128,15 @@
     "AWAITING_SHIPMENT": "Awaiting Shipment",
   };
 
+  // QC and every other station count insoles. Shipping counts orders.
+  function isShippingStation(station) {
+    const s = String(station || "").trim().toUpperCase().replace(/\s+/g, "_");
+    return s === "NEEDS_SHIPPING" || s === "NEEDS_SHIPPING_INTERNAL" || s === "SHIPPING";
+  }
+  function countNoun(station) {
+    return isShippingStation(station) ? "orders" : "insoles";
+  }
+
   function stationLabel(raw) {
     const key = String(raw || "").trim();
     if (STATION_LABELS[key]) return STATION_LABELS[key];
@@ -1451,13 +1460,14 @@
     return svg;
   }
 
-  function directionLine(days) {
+  function directionLine(days, noun) {
+    noun = noun || "insoles";
     if (days.length < 2) return null;
     const last = days[days.length - 1];
     const prev = days[days.length - 2];
     const delta = last.qty - prev.qty;
-    if (delta > 0) return { kind: "up", text: "Picked up " + delta + " insoles" };
-    if (delta < 0) return { kind: "down", text: "Dropped " + (-delta) + " insoles" };
+    if (delta > 0) return { kind: "up", text: "Picked up " + delta + " " + noun };
+    if (delta < 0) return { kind: "down", text: "Dropped " + (-delta) + " " + noun };
     return { kind: "flat", text: "Flat vs " + prev.label };
   }
 
@@ -1622,11 +1632,12 @@
         const name = boardName(station.station, person.who);
         const btn = el(`<button type="button" class="profile"></button>`);
         if (!qty) btn.classList.add("zero");
-        btn.setAttribute("aria-label", name + ", rank " + person.rank + " at " + station.label + ", " + qty + " insoles");
+        const noun = countNoun(station.station);
+        btn.setAttribute("aria-label", name + ", rank " + person.rank + " at " + station.label + ", " + qty + " " + noun);
         btn.appendChild(el(`<span class="rank">${person.rank}</span>`));
         btn.appendChild(el(`<span class="who">${esc(name)}</span>`));
         btn.appendChild(el(`<span class="score">${qty}</span>`));
-        btn.appendChild(el(`<span class="unit">insoles</span>`));
+        btn.appendChild(el(`<span class="unit">${noun}</span>`));
         if (state.rejections && state.rejections.ok) {
           const sent = rejectionSummary(rejectionRowsFor(person.who, station.station).here).rejected;
           if (sent) btn.appendChild(el(`<span class="unit sent-back">${sent} sent back</span>`));
@@ -1677,8 +1688,9 @@
     const combinedDays = series.length > 1
       ? series[0].days.map((d, i) => ({ label: d.label, qty: series.reduce((sum, ser) => sum + (ser.days[i] ? ser.days[i].qty : 0), 0), minutes: 0 }))
       : person.days;
-    const dir = directionLine(combinedDays);
-    host.appendChild(el(`<div class="page-head"><h2>${esc(name)}</h2><span class="legend">${esc(station.label)} · rank ${person.rank} · ${qty} insoles on ${esc(board.day)}</span></div>`));
+    const noun = countNoun(station.station);
+    const dir = directionLine(combinedDays, series.length > 1 ? "insoles" : noun);
+    host.appendChild(el(`<div class="page-head"><h2>${esc(name)}</h2><span class="legend">${esc(station.label)} · rank ${person.rank} · ${qty} ${noun} on ${esc(board.day)}</span></div>`));
     const back = el(`<button type="button" class="btn back-board">Back to scoreboard</button>`);
     back.onclick = () => { state.personFocus = null; renderPeople(); };
     host.appendChild(back);
@@ -1697,7 +1709,7 @@
       return;
     }
     if (dir) host.appendChild(el(`<p class="direction direction-${dir.kind}">${esc(dir.text)}</p>`));
-    const chart = el(`<div class="chart-card"><div class="chart-title">${esc(name)} · insoles by day</div><div class="chart-scroll"></div></div>`);
+    const chart = el(`<div class="chart-card"><div class="chart-title">${esc(name)} · ${noun} by day</div><div class="chart-scroll"></div></div>`);
     chart.querySelector(".chart-scroll").appendChild(series.length > 1 ? trendChartStacked(series) : trendChart(person.days));
     if (series.length > 1) {
       const legend = el(`<p class="target-legend"></p>`);
