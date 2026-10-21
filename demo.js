@@ -118,6 +118,33 @@
       ["SOLEFORGE", "demo-union-5", "Example Foot Care", "NEEDS_SHIPPING", 5, "wb-demo-union-5"],
       ["SOLEMATE", "demo-union-7", "Sample Clinic A", "NEEDS_GLUING", 7, "wb-demo-union-7"],
     ],
+    [`${P} Formotion Day 3+ TAT`]: [
+      ["tat_business_day", "factory", "station_group", "station", "po_number", "shoe_order", "patient_name", "clinician_name", "sub_status", "rework_category", "is_rushed", "days_in_current_step", "authorization_status", "authorization_date", "go_live", "station_entered", "committed_delivery", "is_on_hold", "workbench_id"],
+      [3, "SOLEMATE", "Production", "NEEDS_GLUING", "demo-formotion-3", "No", "Demo Patient Formotion A", "Demo Clinician A", "NEEDS_GLUING", "", "FALSE", 1, "Authorized", "9/1/2026", "8/20/2026", "9/20/2026", "9/28/2026", "FALSE", "wb-demo-formotion-3"],
+      [5, "SOLEFORGE", "Production", "NEEDS_FINISHING", "demo-formotion-5", "Yes", "Demo Patient Formotion B", "Demo Clinician B", "NEEDS_FINISHING", "", "TRUE", 2, "Authorized", "9/2/2026", "8/21/2026", "9/21/2026", "9/28/2026", "FALSE", "wb-demo-formotion-5"],
+    ],
+    [`${P} Elizur Day 3+ TAT`]: [
+      ["tat_business_day", "factory", "station_group", "station", "po_number", "shoe_order", "patient_name", "clinician_name", "sub_status", "rework_category", "is_rushed", "days_in_current_step", "authorization_status", "authorization_date", "go_live", "station_entered", "committed_delivery", "is_on_hold", "workbench_id"],
+      [4, "SOLEMATE", "Production", "NEEDS_GLUING", "demo-elizur-4", "No", "Demo Patient Elizur A", "Demo Clinician C", "NEEDS_GLUING", "", "FALSE", 1, "Authorized", "9/3/2026", "8/22/2026", "9/22/2026", "9/28/2026", "FALSE", "wb-demo-elizur-4"],
+      [6, "SOLEFORGE", "Production", "NEEDS_SHIPPING", "demo-elizur-6", "No", "Demo Patient Elizur B", "Demo Clinician D", "NEEDS_SHIPPING", "", "FALSE", 3, "Authorized", "9/4/2026", "8/23/2026", "9/23/2026", "9/28/2026", "FALSE", "wb-demo-elizur-6"],
+    ],
+    [`${P} Horizon Day 3+ TAT`]: [
+      ["tat_business_day", "factory", "station_group", "station", "po_number", "shoe_order", "patient_name", "clinician_name", "sub_status", "rework_category", "is_rushed", "days_in_current_step", "authorization_status", "authorization_date", "go_live", "station_entered", "committed_delivery", "is_on_hold", "workbench_id"],
+      [3, "SOLEFORGE", "Production", "NEEDS_FINISHING", "demo-horizon-3", "No", "Demo Patient Horizon A", "Demo Clinician E", "NEEDS_FINISHING", "", "FALSE", 1, "Authorized", "9/5/2026", "8/24/2026", "9/24/2026", "9/28/2026", "FALSE", "wb-demo-horizon-3"],
+      [8, "SOLEMATE", "Production", "NEEDS_GLUING", "demo-horizon-8", "Yes", "Demo Patient Horizon B", "Demo Clinician F", "NEEDS_GLUING", "", "TRUE", 4, "Authorized", "9/6/2026", "8/25/2026", "9/25/2026", "9/28/2026", "FALSE", "wb-demo-horizon-8"],
+    ],
+    [`${P} Upperline Day 3+ TAT`]: [
+      ["tat_business_day", "factory", "station_group", "station", "po_number", "shoe_order", "patient_name", "clinician_name", "sub_status", "rework_category", "is_rushed", "days_in_current_step", "authorization_status", "authorization_date", "go_live", "station_entered", "committed_delivery", "is_on_hold", "workbench_id"],
+      [4, "SOLEMATE", "Production", "NEEDS_GLUING", "demo-upperline-4", "No", "Demo Patient Upperline A", "Demo Clinician G", "NEEDS_GLUING", "", "FALSE", 2, "Authorized", "9/7/2026", "8/26/2026", "9/26/2026", "9/28/2026", "FALSE", "wb-demo-upperline-4"],
+      [5, "SOLEFORGE", "Production", "NEEDS_FINISHING", "demo-upperline-5", "No", "Demo Patient Upperline B", "Demo Clinician H", "NEEDS_FINISHING", "", "FALSE", 1, "Authorized", "9/8/2026", "8/27/2026", "9/27/2026", "9/28/2026", "FALSE", "wb-demo-upperline-5"],
+    ],
+    [`${P} Other Companies Day 3+`]: [
+      ["company_name", "company_slug", "tat_business_day", "factory", "station_group", "station", "po_number", "shoe_order", "patient_name", "clinician_name", "sub_status", "rework_category", "is_rushed", "days_in_current_step", "authorization_status", "authorization_date", "go_live", "station_entered", "committed_delivery", "is_on_hold", "workbench_id"],
+      ["Northwind Clinic", "northwind", 6, "SOLEMATE", "Production", "NEEDS_GLUING", "demo-other-nw-6", "No", "Demo Patient Northwind", "Demo Clinician I", "NEEDS_GLUING", "", "FALSE", 2, "Authorized", "9/9/2026", "8/28/2026", "9/20/2026", "9/28/2026", "FALSE", "wb-demo-other-nw-6"],
+      ["Northwind Clinic", "northwind", 3, "SOLEFORGE", "Production", "NEEDS_FINISHING", "demo-other-nw-3", "Yes", "Demo Patient Northwind B", "Demo Clinician J", "NEEDS_FINISHING", "", "TRUE", 1, "Authorized", "9/10/2026", "8/29/2026", "9/21/2026", "9/28/2026", "FALSE", "wb-demo-other-nw-3"],
+      ["Pebble Foot Lab", "pebble-foot", 4, "SOLEMATE", "Production", "NEEDS_SHIPPING", "demo-other-pf-4", "No", "Demo Patient Pebble", "Demo Clinician K", "NEEDS_SHIPPING", "", "FALSE", 1, "Authorized", "9/11/2026", "8/30/2026", "9/22/2026", "9/28/2026", "FALSE", "wb-demo-other-pf-4"],
+      ["Sample Step Co", "sample-step", 5, "SOLEFORGE", "Production", "NEEDS_GLUING", "demo-other-ss-5", "No", "Demo Patient Sample", "Demo Clinician L", "NEEDS_GLUING", "", "FALSE", 3, "Authorized", "9/12/2026", "8/31/2026", "9/23/2026", "9/28/2026", "FALSE", "wb-demo-other-ss-5"],
+    ],
     [`${P} TAT Report`]: [
       ["timeframe", "factory", "workstation", "sla_status", "current_status", "po_number", "days_over", "company_name", "created_reason", "is_rushed", "shoe_size", "shoe_gender", "step_start", "step_end", "sla_days", "actual_biz_days", "Notes", "workbench_id"],
       ["Last 2d", "SOLEFORGE", "Printing", "MISSED", "COMPLETED", "demo-print-1", "1", "Sample Clinic A", "New", "FALSE", "9", "M", "9/22/2026", "9/25/2026", "2", "3", "", "wb-demo-print-1"],

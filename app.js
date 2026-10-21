@@ -65,6 +65,11 @@
     holdSort: { col: "", dir: 1 },
     hanger: [], hangerCols: [],
     union: [], unionCols: [],
+    formotion: [], formotionCols: [],
+    elizur: [], elizurCols: [],
+    horizon: [], horizonCols: [],
+    upperline: [], upperlineCols: [],
+    others: [], othersCols: [],
     volume: [], volumeCols: [],
     page: "summary",
   };
@@ -244,6 +249,11 @@
     const tHolds = findTab("On Hold External Detail");
     const tHanger = findTab("Hanger Day 3+ TAT");
     const tUnion = findTab("Union Day 3+ TAT");
+    const tFormotion = findTab("Formotion Day 3+ TAT");
+    const tElizur = findTab("Elizur Day 3+ TAT");
+    const tHorizon = findTab("Horizon Day 3+ TAT");
+    const tUpperline = findTab("Upperline Day 3+ TAT");
+    const tOthers = findTab("Other Companies Day 3+");
     const tVolume = findTab("Company Volume Trends");
     const tQuality = findTab("Quality Detail");
     if (!tSummary && !tDel) throw new Error(`This Sheet has no "Ops Summary" or "Delinquency by Station" tab. Is it the Ops Standup Sheet?`);
@@ -254,7 +264,8 @@
     const wanted = [
       [tSummary, null], [tDel, null], [tDetail, null], [tNotes, null],
       [tOts, null], [tTat, null], [tPerson, null], [tHolds, null],
-      [tHanger, null], [tUnion, null], [tVolume, null], [tQuality, null],
+      [tHanger, null], [tUnion, null], [tFormotion, null], [tElizur, null], [tHorizon, null], [tUpperline, null], [tOthers, null],
+      [tVolume, null], [tQuality, null],
     ].filter((pair) => pair[0]);
     const ranges = wanted.map(([tab, cols]) => "ranges=" + encodeURIComponent(rangeOf(tab, cols)));
     const data = await api(`${SHEETS_API}/${sheetId}/values:batchGet?${ranges.join("&")}&valueRenderOption=FORMATTED_VALUE`);
@@ -291,6 +302,21 @@
     const union = toObjects(byTab[tUnion] || []);
     state.union = union.rows;
     state.unionCols = union.cols;
+    const formotion = toObjects(byTab[tFormotion] || []);
+    state.formotion = formotion.rows;
+    state.formotionCols = formotion.cols;
+    const elizur = toObjects(byTab[tElizur] || []);
+    state.elizur = elizur.rows;
+    state.elizurCols = elizur.cols;
+    const horizon = toObjects(byTab[tHorizon] || []);
+    state.horizon = horizon.rows;
+    state.horizonCols = horizon.cols;
+    const upperline = toObjects(byTab[tUpperline] || []);
+    state.upperline = upperline.rows;
+    state.upperlineCols = upperline.cols;
+    const others = toObjects(byTab[tOthers] || []);
+    state.others = others.rows;
+    state.othersCols = others.cols;
     const volume = toObjects(byTab[tVolume] || []);
     state.volume = volume.rows;
     state.volumeCols = volume.cols;
@@ -2264,6 +2290,42 @@
   }
   function renderHanger() { renderTat("page-hanger", state.hanger, state.hangerCols, "Hanger Day 3+ TAT"); }
   function renderUnion() { renderTat("page-union", state.union, state.unionCols, "Union Day 3+ TAT"); }
+  function renderFormotion() { renderTat("page-formotion", state.formotion, state.formotionCols, "Formotion Day 3+ TAT"); }
+  function renderElizur() { renderTat("page-elizur", state.elizur, state.elizurCols, "Elizur Day 3+ TAT"); }
+  function renderHorizon() { renderTat("page-horizon", state.horizon, state.horizonCols, "Horizon Day 3+ TAT"); }
+  function renderUpperline() { renderTat("page-upperline", state.upperline, state.upperlineCols, "Upperline Day 3+ TAT"); }
+
+  const OTHERS_COMPANY_KEY = "ops-standup:othersCompany";
+  function renderOthers() {
+    const allRows = state.others || [];
+    const allCols = state.othersCols || [];
+    if (!allCols.length) {
+      renderTat("page-others", allRows, allCols, "Other Companies Day 3+");
+      return;
+    }
+    const names = [...new Set(allRows.map((r) => String(r.company_name || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    let chosen = "";
+    try { chosen = localStorage.getItem(OTHERS_COMPANY_KEY) || ""; } catch (_) { chosen = ""; }
+    if (chosen && !names.includes(chosen)) chosen = "";
+    const rows = chosen ? allRows.filter((r) => String(r.company_name || "").trim() === chosen) : allRows;
+    const hidden = new Set(chosen ? ["company_name", "company_slug"] : ["company_slug"]);
+    let cols = allCols.filter((c) => !hidden.has(c));
+    if (!chosen && cols.includes("company_name")) cols = ["company_name"].concat(cols.filter((c) => c !== "company_name"));
+    renderTat("page-others", rows, cols, "Other Companies Day 3+");
+    const host = $("page-others");
+    const options = [`<option value="">All other companies</option>`].concat(names.map((n) => `<option value="${esc(n)}"${n === chosen ? " selected" : ""}>${esc(n)}</option>`));
+    const countLabel = `${rows.length} ${rows.length === 1 ? "order" : "orders"} at day 3+`;
+    const bar = el(`<div class="others-bar"><label>Company <select>${options.join("")}</select></label><span class="muted">${countLabel}</span></div>`);
+    bar.querySelector("select").onchange = (e) => {
+      const value = e.target.value;
+      try {
+        if (value) localStorage.setItem(OTHERS_COMPANY_KEY, value);
+        else localStorage.removeItem(OTHERS_COMPANY_KEY);
+      } catch (_) { /* the list still filters for this visit */ }
+      renderOthers();
+    };
+    host.insertBefore(bar, host.firstChild);
+  }
 
   // ───────────────────────── OTS Report / TAT Report ─────────────────────────
   // Same rows and columns as the Sheet, in the Sheet's order. Each heading
@@ -3135,6 +3197,11 @@
     $("page-holds").hidden = p !== "holds";
     $("page-hanger").hidden = p !== "hanger";
     $("page-union").hidden = p !== "union";
+    $("page-formotion").hidden = p !== "formotion";
+    $("page-elizur").hidden = p !== "elizur";
+    $("page-horizon").hidden = p !== "horizon";
+    $("page-upperline").hidden = p !== "upperline";
+    $("page-others").hidden = p !== "others";
     $("page-volume").hidden = p !== "volume";
   }
 
@@ -3161,7 +3228,7 @@
       $("gate").hidden = true; $("tabs").hidden = false;
       $("pack-title").textContent = state.title;
       $("user").textContent = state.user; $("signout").hidden = false;
-      renderSummary(); renderDelinquency(); renderOts(); renderTatReport(); renderPeople(); renderHolds(); renderHanger(); renderUnion(); renderVolume();
+      renderSummary(); renderDelinquency(); renderOts(); renderTatReport(); renderPeople(); renderHolds(); renderHanger(); renderUnion(); renderFormotion(); renderElizur(); renderHorizon(); renderUpperline(); renderOthers(); renderVolume();
       showPage(state.delinquency.length && !state.summary.length ? "delinquency" : "summary");
     } catch (e) {
       err.textContent = e.message; err.hidden = false;
