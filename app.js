@@ -2296,11 +2296,22 @@
   function renderUpperline() { renderTat("page-upperline", state.upperline, state.upperlineCols, "Upperline Day 3+ TAT"); }
 
   const OTHERS_COMPANY_KEY = "ops-standup:othersCompany";
+  function othersCell(row, name) {
+    return String(row[name] == null ? "" : row[name]).trim().toLowerCase().replace(/[_-]+/g, " ");
+  }
+  // Other Companies only. Toe fillers sit at Anodyne (factory TOE_FILLER).
+  // Auth pending is authorization_status PENDING. Both stay on the Sheet.
+  function othersSkipped(row) {
+    const stationBits = [othersCell(row, "factory"), othersCell(row, "station"), othersCell(row, "sub_status")];
+    if (stationBits.some((v) => v === "toe filler" || v === "anodyne factory")) return true;
+    const auth = othersCell(row, "authorization_status");
+    return auth === "pending" || auth === "auth pending" || auth === "authorization pending";
+  }
   function renderOthers() {
-    const allRows = state.others || [];
+    const allRows = (state.others || []).filter((r) => !othersSkipped(r));
     const allCols = state.othersCols || [];
     if (!allCols.length) {
-      renderTat("page-others", allRows, allCols, "Other Companies Day 3+");
+      renderTat("page-others", state.others || [], allCols, "Other Companies Day 3+");
       return;
     }
     const names = [...new Set(allRows.map((r) => String(r.company_name || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
