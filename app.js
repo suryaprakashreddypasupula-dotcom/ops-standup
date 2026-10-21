@@ -2246,6 +2246,7 @@
     );
     host.appendChild(swatch);
     const wbIndex = workbenchIndex();
+    const holdPos = externalHoldPos();
     const wrap = el(`<div class="grid-wrap"></div>`);
     const table = document.createElement("table");
     table.className = "grid";
@@ -2280,6 +2281,13 @@
           td.textContent = text;
           if (text) td.title = text;
         }
+        if (text && isPoCol(c) && holdPos.has(text.trim().toLowerCase())) {
+          const tag = document.createElement("span");
+          tag.className = "hold-tag";
+          tag.textContent = "External hold";
+          tag.title = "This PO is on On Hold External";
+          td.appendChild(tag);
+        }
         tr.appendChild(td);
       });
       tb.appendChild(tr);
@@ -2287,6 +2295,15 @@
     table.append(thead, tb);
     wrap.appendChild(table);
     host.appendChild(wrap);
+  }
+  function externalHoldPos() {
+    const set = new Set();
+    (state.holds || []).forEach((r) => {
+      const po = r["PO Number"] != null ? r["PO Number"] : r.po_number;
+      const key = String(po || "").trim().toLowerCase();
+      if (key) set.add(key);
+    });
+    return set;
   }
   function renderHanger() { renderTat("page-hanger", state.hanger, state.hangerCols, "Hanger Day 3+ TAT"); }
   function renderUnion() { renderTat("page-union", state.union, state.unionCols, "Union Day 3+ TAT"); }

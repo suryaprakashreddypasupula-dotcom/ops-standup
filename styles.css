@@ -358,6 +358,11 @@ table.grid th { box-shadow: 0 1px 0 var(--border); }
 #page-hanger table.grid, #page-union table.grid, #page-formotion table.grid, #page-elizur table.grid, #page-horizon table.grid, #page-upperline table.grid, #page-others table.grid { min-width: 0; width: max-content; }
 #page-hanger a.po-link, #page-union a.po-link, #page-formotion a.po-link, #page-elizur a.po-link, #page-horizon a.po-link, #page-upperline a.po-link, #page-others a.po-link { color: var(--link); font-weight: 600; text-decoration: none; }
 #page-hanger a.po-link:hover, #page-union a.po-link:hover, #page-formotion a.po-link:hover, #page-elizur a.po-link:hover, #page-horizon a.po-link:hover, #page-upperline a.po-link:hover, #page-others a.po-link:hover { text-decoration: underline; }
+.hold-tag {
+  display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 4px;
+  font-size: 11px; line-height: 16px; font-weight: 600; vertical-align: middle;
+  background: #e8eef8; color: #1e3a5f;
+}
 .others-bar { display: flex; align-items: center; gap: 12px; margin: 0 0 12px; flex-wrap: wrap; }
 .others-bar select { font: inherit; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
 .tat-key { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }

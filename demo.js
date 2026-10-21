@@ -102,6 +102,9 @@
       ["SOLEFORGE", "demo-hold-3", "Demo Patient C", "English", "Riley Chen", "riley.chen@example.com", "555-0103", "Demo Orthotics", "NEEDS_SHIPPING", "Manual", "Other: clinic asked to pause", "9/20/2026", 9, "", "9/10/2026", "Alex Rivera", "alex.rivera@example.com"],
       ["SOLEMATE", "demo-hold-4", "Demo Patient D", "English", "Quinn Brooks", "quinn.brooks@example.com", "555-0104", "Example Foot Care", "DRAFT", "Auth Flip", "", "9/1/2026", 22, "", "8/28/2026", "", ""],
       ["SOLEFORGE", "demo-hold-5", "Demo Patient E", "Spanish", "Morgan Diaz", "morgan.diaz@example.com", "555-0105", "Sample Clinic A", "NEEDS_MANUFACTURING", "Manual", "Scan unreadable", "9/26/2026", 5, "", "9/18/2026", "Jordan Lee", "jordan.lee@example.com"],
+      ["SOLEFORGE", "demo-hanger-6", "Demo Patient Hold H", "English", "Demo Clinician P", "demo.clinician.p@example.com", "555-0191", "Example Foot Care", "NEEDS_GLUING", "Manual", "Clinic asked to pause", "9/26/2026", 4, "", "9/10/2026", "Demo Clinician P", "demo.clinician.p@example.com"],
+      ["SOLEFORGE", "demo-formotion-5", "Demo Patient Formotion B", "English", "Demo Clinician B", "demo.clinician.b@example.com", "555-0192", "Formotion", "NEEDS_FINISHING", "Auth Flip", "", "9/22/2026", 6, "", "9/2/2026", "", ""],
+      ["SOLEMATE", "demo-other-nw-6", "Demo Patient Northwind", "English", "Demo Clinician I", "demo.clinician.i@example.com", "555-0193", "Northwind Clinic", "NEEDS_GLUING", "Manual", "Waiting on a scan", "9/24/2026", 2, "", "9/9/2026", "Demo Clinician I", "demo.clinician.i@example.com"],
     ],
     [`${P} Hanger Day 3+ TAT`]: [
       ["Factory", "PO Number", "Company", "Station", "Days", "workbench_id"],
