@@ -105,6 +105,12 @@
       ["SOLEFORGE", "demo-hanger-6", "Demo Patient Hold H", "English", "Demo Clinician P", "demo.clinician.p@example.com", "555-0191", "Example Foot Care", "NEEDS_GLUING", "Manual", "Clinic asked to pause", "9/26/2026", 4, "", "9/10/2026", "Demo Clinician P", "demo.clinician.p@example.com"],
       ["SOLEFORGE", "demo-formotion-5", "Demo Patient Formotion B", "English", "Demo Clinician B", "demo.clinician.b@example.com", "555-0192", "Formotion", "NEEDS_FINISHING", "Auth Flip", "", "9/22/2026", 6, "", "9/2/2026", "", ""],
       ["SOLEMATE", "demo-other-nw-6", "Demo Patient Northwind", "English", "Demo Clinician I", "demo.clinician.i@example.com", "555-0193", "Northwind Clinic", "NEEDS_GLUING", "Manual", "Waiting on a scan", "9/24/2026", 2, "", "9/9/2026", "Demo Clinician I", "demo.clinician.i@example.com"],
+      ["SOLEMATE", "demo-hold-only-hanger", "Demo Patient Hold Only H", "English", "Demo Clinician Q", "demo.q@example.com", "555-0194", "Hanger Clinic", "NEEDS_GLUING", "Manual", "Clinic asked to pause", "9/20/2026", 8, "", "9/1/2026", "", ""],
+      ["SOLEFORGE", "demo-hold-only-union", "Demo Patient Hold Only U", "English", "Demo Clinician R", "demo.r@example.com", "555-0195", "Union Orthotics and Prosthetics", "NEEDS_FINISHING", "Manual", "Waiting on photos", "9/21/2026", 5, "", "9/2/2026", "", ""],
+      ["SOLEMATE", "demo-hold-only-formotion", "Demo Patient Hold Only F", "English", "Demo Clinician S", "demo.s@example.com", "555-0196", "ForMotion Clinic", "NEEDS_GLUING", "Auth Flip", "", "9/18/2026", 9, "", "9/3/2026", "", ""],
+      ["SOLEFORGE", "demo-hold-only-elizur", "Demo Patient Hold Only E", "English", "Demo Clinician T", "demo.t@example.com", "555-0197", "Elizur", "NEEDS_SHIPPING", "Manual", "Scan unreadable", "9/19/2026", 4, "", "9/4/2026", "", ""],
+      ["SOLEMATE", "demo-hold-only-horizon", "Demo Patient Hold Only Z", "English", "Demo Clinician U", "demo.u@example.com", "555-0198", "Horizon Prosthetics", "NEEDS_FINISHING", "Manual", "Clinic asked to pause", "9/17/2026", 6, "", "9/5/2026", "", ""],
+      ["SOLEFORGE", "demo-hold-only-upperline", "Demo Patient Hold Only Y", "English", "Demo Clinician V", "demo.v@example.com", "555-0199", "Upperline Health, Inc", "NEEDS_GLUING", "Auth Flip", "", "9/16/2026", 7, "", "9/6/2026", "", ""],
     ],
     [`${P} Hanger Day 3+ TAT`]: [
       ["Factory", "PO Number", "Company", "Station", "Days", "workbench_id"],

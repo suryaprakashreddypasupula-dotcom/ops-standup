@@ -2253,7 +2253,6 @@
     );
     host.appendChild(swatch);
     const wbIndex = workbenchIndex();
-    const holdPos = externalHoldPos();
     const wrap = el(`<div class="grid-wrap"></div>`);
     const table = document.createElement("table");
     table.className = "grid";
@@ -2288,7 +2287,7 @@
           td.textContent = text;
           if (text) td.title = text;
         }
-        if (text && isPoCol(c) && holdPos.has(text.trim().toLowerCase())) {
+        if (text && isPoCol(c) && orderOnExternalHold(r, text)) {
           const tag = document.createElement("span");
           tag.className = "hold-tag";
           tag.textContent = "External hold";
@@ -2303,21 +2302,91 @@
     wrap.appendChild(table);
     host.appendChild(wrap);
   }
-  function externalHoldPos() {
-    const set = new Set();
-    (state.holds || []).forEach((r) => {
-      const po = r["PO Number"] != null ? r["PO Number"] : r.po_number;
-      const key = String(po || "").trim().toLowerCase();
-      if (key) set.add(key);
-    });
-    return set;
+  function poNorm(po) { return String(po || "").trim().toLowerCase().replace(/\s+/g, ""); }
+  function posMatch(a, b) {
+    const x = poNorm(a), y = poNorm(b);
+    if (!x || !y) return false;
+    return x === y || x.endsWith("-" + y) || y.endsWith("-" + x);
   }
-  function renderHanger() { renderTat("page-hanger", state.hanger, state.hangerCols, "Hanger Day 3+ TAT"); }
-  function renderUnion() { renderTat("page-union", state.union, state.unionCols, "Union Day 3+ TAT"); }
-  function renderFormotion() { renderTat("page-formotion", state.formotion, state.formotionCols, "Formotion Day 3+ TAT"); }
-  function renderElizur() { renderTat("page-elizur", state.elizur, state.elizurCols, "Elizur Day 3+ TAT"); }
-  function renderHorizon() { renderTat("page-horizon", state.horizon, state.horizonCols, "Horizon Day 3+ TAT"); }
-  function renderUpperline() { renderTat("page-upperline", state.upperline, state.upperlineCols, "Upperline Day 3+ TAT"); }
+  function rowPo(row) {
+    const key = Object.keys(row || {}).find((c) => isPoCol(c));
+    return key ? String(row[key] || "").trim() : "";
+  }
+  function holdField(row, re) {
+    const key = Object.keys(row || {}).find((c) => re.test(String(c)));
+    return key ? String(row[key] == null ? "" : row[key]).trim() : "";
+  }
+  function externalHoldRecords() {
+    return (state.holds || []).map((r) => ({
+      po: rowPo(r),
+      company: holdField(r, /^company( name|_name)?$/i),
+      row: r,
+    })).filter((h) => h.po);
+  }
+  function orderOnExternalHold(row, poText) {
+    if (row && row._externalHold) return true;
+    return externalHoldRecords().some((h) => posMatch(h.po, poText));
+  }
+  // Dedicated Day 3+ pages. Any other company name lands on Other Companies.
+  function holdPageKey(company) {
+    const pages = [
+      ["hanger", /hanger/i],
+      ["union", /union/i],
+      ["formotion", /formotion/i],
+      ["elizur", /elizur/i],
+      ["horizon", /horizon/i],
+      ["upperline", /upperline/i],
+    ];
+    const hit = pages.find(([, re]) => re.test(company || ""));
+    return hit ? hit[0] : "others";
+  }
+  function listedTatRows() {
+    return []
+      .concat(state.hanger, state.union, state.formotion, state.elizur, state.horizon, state.upperline)
+      .concat((state.others || []).filter((r) => !othersSkipped(r)));
+  }
+  function holdAsTatRow(hold, cols) {
+    const o = { _externalHold: true };
+    cols.forEach((c) => { o[c] = ""; });
+    const poCol = cols.find((c) => isPoCol(c));
+    if (poCol) o[poCol] = hold.po;
+    const put = (re, value) => {
+      const c = cols.find((name) => re.test(name));
+      if (c && value) o[c] = value;
+    };
+    put(/^factory$/i, holdField(hold.row, /^factory$/i));
+    put(/patient/i, holdField(hold.row, /^patient$/i));
+    put(/clinician/i, holdField(hold.row, /^clinician$/i));
+    put(/^company(_name)?$/i, hold.company);
+    put(/authorization_date/i, holdField(hold.row, /authorization_date/i));
+    put(/^station$/i, holdField(hold.row, /^held from$/i) || "On Hold External");
+    put(/^station_group$/i, "On Hold");
+    return o;
+  }
+  function withExternalHolds(pageKey, rows, cols) {
+    const list = rows || [];
+    const listed = listedTatRows();
+    const extras = externalHoldRecords()
+      .filter((h) => holdPageKey(h.company) === pageKey)
+      .filter((h) => !listed.some((r) => posMatch(rowPo(r), h.po)))
+      .map((h) => holdAsTatRow(h, cols));
+    return list.concat(extras);
+  }
+  function renderCompanyTat(pageId, rows, cols, suffix, pageKey) {
+    const useCols = cols && cols.length ? cols : ["factory", "po_number", "station", "patient_name", "clinician_name"];
+    const merged = withExternalHolds(pageKey, rows, useCols);
+    if (!(cols && cols.length) && !merged.length) {
+      renderTat(pageId, rows || [], cols || [], suffix);
+      return;
+    }
+    renderTat(pageId, merged, useCols, suffix);
+  }
+  function renderHanger() { renderCompanyTat("page-hanger", state.hanger, state.hangerCols, "Hanger Day 3+ TAT", "hanger"); }
+  function renderUnion() { renderCompanyTat("page-union", state.union, state.unionCols, "Union Day 3+ TAT", "union"); }
+  function renderFormotion() { renderCompanyTat("page-formotion", state.formotion, state.formotionCols, "Formotion Day 3+ TAT", "formotion"); }
+  function renderElizur() { renderCompanyTat("page-elizur", state.elizur, state.elizurCols, "Elizur Day 3+ TAT", "elizur"); }
+  function renderHorizon() { renderCompanyTat("page-horizon", state.horizon, state.horizonCols, "Horizon Day 3+ TAT", "horizon"); }
+  function renderUpperline() { renderCompanyTat("page-upperline", state.upperline, state.upperlineCols, "Upperline Day 3+ TAT", "upperline"); }
 
   const OTHERS_COMPANY_KEY = "ops-standup:othersCompany";
   function othersCell(row, name) {
@@ -2332,10 +2401,13 @@
     return auth === "pending" || auth === "auth pending" || auth === "authorization pending";
   }
   function renderOthers() {
-    const allRows = (state.others || []).filter((r) => !othersSkipped(r));
-    const allCols = state.othersCols || [];
-    if (!allCols.length) {
-      renderTat("page-others", state.others || [], allCols, "Other Companies Day 3+");
+    const tatRows = (state.others || []).filter((r) => !othersSkipped(r));
+    const sheetCols = state.othersCols || [];
+    const fallbackCols = ["company_name", "factory", "po_number", "station", "patient_name", "clinician_name"];
+    const allCols = sheetCols.length ? sheetCols : fallbackCols;
+    const allRows = withExternalHolds("others", tatRows, allCols);
+    if (!sheetCols.length && !allRows.length) {
+      renderTat("page-others", state.others || [], sheetCols, "Other Companies Day 3+");
       return;
     }
     const names = [...new Set(allRows.map((r) => String(r.company_name || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
