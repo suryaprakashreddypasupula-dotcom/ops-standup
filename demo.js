@@ -151,6 +151,16 @@
       ["Sample Step Co", "sample-step", 4, "SOLEMATE", "Production", "NEEDS_GLUING", "demo-other-pending", "No", "Demo Patient Pending", "Demo Clinician N", "NEEDS_GLUING", "", "FALSE", 1, "PENDING", "9/14/2026", "8/21/2026", "9/19/2026", "9/28/2026", "FALSE", "wb-demo-other-pending"],
       ["Hidden Toe Co", "hidden-toe", 5, "TOE_FILLER", "Design", "Anodyne Factory", "demo-other-hidden-toe", "No", "Demo Patient Hidden", "Demo Clinician O", "Anodyne Factory", "", "FALSE", 1, "APPROVED", "9/15/2026", "8/22/2026", "9/20/2026", "9/28/2026", "FALSE", "wb-demo-other-hidden-toe"],
     ],
+    [`${P} Handle Colors`]: [
+      ["company_name", "po_number", "workbench_id", "factory", "station_group", "status", "handle", "handle_reason", "is_rush", "shoe_order", "created_reason", "rejection_detail", "authorization_date", "go_live", "station_entered", "patient_name", "clinician"],
+      ["Northwind Clinic", "demo-handle-nw-1", "wb-demo-handle-nw-1", "SOLEMATE", "Printing", "Printing", "Black", "Rush", "TRUE", "N", "New", "", "9/20/2026", "9/21/2026", "9/24/2026", "Demo Patient Handle A", "Demo Clinician A"],
+      ["Northwind Clinic", "demo-handle-nw-2", "wb-demo-handle-nw-2", "SOLEFORGE", "Production", "Gluing", "Black", "Remake", "FALSE", "Y", "REMAKE", "", "9/18/2026", "9/19/2026", "9/25/2026", "Demo Patient Handle B", "Demo Clinician B"],
+      ["Northwind Clinic", "demo-handle-nw-3", "wb-demo-handle-nw-3", "SOLEMATE", "Production", "Finishing", "White", "", "FALSE", "N", "New", "", "9/26/2026", "9/26/2026", "9/27/2026", "Demo Patient Handle C", "Demo Clinician C"],
+      ["Pebble Foot Lab", "demo-handle-pf-1", "wb-demo-handle-pf-1", "SOLEFORGE", "Printing", "Printing", "Black", "QC reject to Print", "FALSE", "N", "New", "Demo reprint note", "9/16/2026", "9/17/2026", "9/22/2026", "Demo Patient Handle D", "Demo Clinician D"],
+      ["Pebble Foot Lab", "demo-handle-pf-2", "wb-demo-handle-pf-2", "SOLEMATE", "Production", "Quality Control", "White", "", "FALSE", "Y", "New", "", "9/25/2026", "9/25/2026", "9/28/2026", "Demo Patient Handle E", "Demo Clinician E"],
+      ["Sample Step Co", "demo-handle-ss-1", "wb-demo-handle-ss-1", "SOLEMATE", "Production", "Finishing", "White", "", "FALSE", "N", "New", "", "9/27/2026", "9/27/2026", "9/28/2026", "Demo Patient Handle F", "Demo Clinician F"],
+      ["Sample Step Co", "demo-handle-ss-2", "wb-demo-handle-ss-2", "SOLEFORGE", "Printing", "Grinding", "Black", "Age: 4+ weekdays since auth", "FALSE", "N", "New", "", "9/14/2026", "9/15/2026", "9/23/2026", "Demo Patient Handle G", "Demo Clinician G"],
+    ],
     [`${P} TAT Report`]: [
       ["timeframe", "factory", "workstation", "sla_status", "current_status", "po_number", "days_over", "company_name", "created_reason", "is_rushed", "shoe_size", "shoe_gender", "step_start", "step_end", "sla_days", "actual_biz_days", "Notes", "workbench_id"],
       ["Last 2d", "SOLEFORGE", "Printing", "MISSED", "COMPLETED", "demo-print-1", "1", "Sample Clinic A", "New", "FALSE", "9", "M", "9/22/2026", "9/25/2026", "2", "3", "", "wb-demo-print-1"],
