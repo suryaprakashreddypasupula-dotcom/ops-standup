@@ -3333,6 +3333,116 @@
     ["go_live", "Go live"],
     ["station_entered", "Station entered"],
   ];
+  const BLACK_EXPORT = [["company_name", "Company"]].concat(HANDLE_DETAIL);
+  function facilityRank(name) {
+    const k = String(name || "").trim().toUpperCase();
+    if (k === "SOLEFORGE") return 0;
+    if (k === "SOLEMATE") return 1;
+    if (k === "TOE_FILLER" || k === "ANODYNE FACTORY") return 2;
+    if (!k || k === "UNASSIGNED") return 9;
+    return 5;
+  }
+  function handleByFacility(rows) {
+    const map = new Map();
+    (rows || []).forEach((r) => {
+      const name = handleText(r, "factory") || "Unassigned";
+      if (!map.has(name)) map.set(name, []);
+      map.get(name).push(r);
+    });
+    return [...map.entries()].sort((a, b) => facilityRank(a[0]) - facilityRank(b[0]) || a[0].localeCompare(b[0]));
+  }
+  function handleDatePrefix() {
+    const src = String((findTab("Handle Colors") || state.title || "")).trim();
+    const m = src.match(/(\d{1,2}_\d{1,2})/);
+    return m ? m[1] : "";
+  }
+  function blackHandleFilename(factory) {
+    const date = handleDatePrefix();
+    const stem = factory ? `Black Handle ${factory}` : "Black Handle List";
+    return `${date ? date + " " : ""}${stem}.csv`;
+  }
+  function csvCell(v) {
+    const s = String(v == null ? "" : v);
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  }
+  function downloadCsv(filename, cols, rows) {
+    const lines = [cols.map(([, label]) => csvCell(label)).join(",")];
+    rows.forEach((r) => lines.push(cols.map(([key]) => csvCell(handleText(r, key))).join(",")));
+    const blob = new Blob([lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+  function appendHandleTable(parent, rows, cols) {
+    const wrap = el(`<div class="grid-wrap"></div>`);
+    const table = document.createElement("table");
+    table.className = "grid";
+    const thead = document.createElement("thead");
+    const hr = document.createElement("tr");
+    cols.forEach(([, label]) => {
+      const th = document.createElement("th");
+      th.textContent = label;
+      hr.appendChild(th);
+    });
+    thead.appendChild(hr);
+    const tb = document.createElement("tbody");
+    rows.forEach((r) => {
+      const tr = document.createElement("tr");
+      cols.forEach(([key]) => {
+        const td = document.createElement("td");
+        const text = handleText(r, key);
+        if (key === "po_number") {
+          const wb = handleText(r, "workbench_id");
+          if (wb && text) {
+            const a = document.createElement("a");
+            a.href = `${CFG.WORKBENCH_BASE}/${encodeURIComponent(wb)}`;
+            a.target = "_blank";
+            a.rel = "noopener";
+            a.className = "po-link";
+            a.textContent = text;
+            a.title = "Open the workbench for " + text;
+            td.appendChild(a);
+          } else {
+            td.textContent = text;
+          }
+        } else if (key === "handle" && text) {
+          const tone = handleTone(r);
+          const tag = document.createElement("span");
+          tag.className = "handle-tag" + (tone ? " " + tone : "");
+          tag.textContent = text;
+          td.appendChild(tag);
+        } else {
+          td.textContent = text;
+          if (text) td.title = text;
+        }
+        tr.appendChild(td);
+      });
+      tb.appendChild(tr);
+    });
+    table.append(thead, tb);
+    wrap.appendChild(table);
+    parent.appendChild(wrap);
+  }
+  function appendBlackHandleLists(host, rows) {
+    const black = (rows || []).filter((r) => handleTone(r) === "black")
+      .sort((a, b) => handleText(a, "company_name").localeCompare(handleText(b, "company_name")) || handleText(a, "po_number").localeCompare(handleText(b, "po_number")));
+    const block = el(`<section class="handle-black"></section>`);
+    block.appendChild(el(`<div class="handle-block-head"><h3>Black handle list</h3></div>`));
+    if (!black.length) {
+      block.appendChild(el(`<div class="empty">No black handles in this Sheet.</div>`));
+      host.appendChild(block);
+      return;
+    }
+    handleByFacility(black).forEach(([factory, list]) => {
+      block.appendChild(el(`<div class="handle-block-head"><h3>Black handle ${esc(factory)}</h3><span class="muted">${list.length} ${list.length === 1 ? "order" : "orders"}</span></div>`));
+      appendHandleTable(block, list, [["company_name", "Company"]].concat(HANDLE_DETAIL.filter(([key]) => key !== "factory")));
+    });
+    host.appendChild(block);
+  }
   function renderHandles() {
     const host = $("page-handles");
     if (!host) return;
@@ -3377,7 +3487,18 @@
         if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); }
       };
       const name = document.createElement("td");
-      name.textContent = g.name;
+      const co = document.createElement("div");
+      co.className = "handle-co";
+      co.textContent = g.name;
+      name.appendChild(co);
+      handleByFacility(g.rows).forEach(([factory, list]) => {
+        const blackN = list.filter((r) => handleTone(r) === "black").length;
+        const whiteN = list.filter((r) => handleTone(r) === "white").length;
+        const line = document.createElement("div");
+        line.className = "handle-fac";
+        line.textContent = `${factory} · ${blackN} black · ${whiteN} white`;
+        name.appendChild(line);
+      });
       const b = document.createElement("td");
       b.className = "num black-count";
       b.textContent = String(g.black);
@@ -3393,6 +3514,16 @@
     table.append(thead, tb);
     wrap.appendChild(table);
     host.appendChild(wrap);
+    const allRows = (groups || []).reduce((all, g) => all.concat(g.rows), []);
+    appendBlackHandleLists(host, allRows);
+    const blackRows = allRows.filter((r) => handleTone(r) === "black")
+      .sort((a, b) => handleText(a, "company_name").localeCompare(handleText(b, "company_name")) || handleText(a, "po_number").localeCompare(handleText(b, "po_number")));
+    const download = el(`<div class="handle-block-head handle-download"></div>`);
+    const allBtn = el(`<button type="button" class="btn">Download CSV</button>`);
+    allBtn.title = blackHandleFilename();
+    allBtn.onclick = () => downloadCsv(blackHandleFilename(), BLACK_EXPORT, blackRows);
+    download.appendChild(allBtn);
+    host.appendChild(download);
   }
   function renderHandleOrders(host, title, group) {
     const back = el(`<button type="button" class="linklike back-board">All companies</button>`);
@@ -3401,54 +3532,15 @@
     host.appendChild(el(
       `<div class="page-head"><h2>${esc(group.name)}</h2><span class="legend">${group.black} black · ${group.white} white · ${esc(title)}</span></div>`
     ));
-    const wrap = el(`<div class="grid-wrap"></div>`);
-    const table = document.createElement("table");
-    table.className = "grid";
-    const thead = document.createElement("thead");
-    const hr = document.createElement("tr");
-    HANDLE_DETAIL.forEach(([, label]) => {
-      const th = document.createElement("th");
-      th.textContent = label;
-      hr.appendChild(th);
+    const detailCols = HANDLE_DETAIL.filter(([key]) => key !== "factory");
+    handleByFacility(group.rows).forEach(([factory, list]) => {
+      const black = list.filter((r) => handleTone(r) === "black").length;
+      const white = list.filter((r) => handleTone(r) === "white").length;
+      host.appendChild(el(
+        `<div class="handle-block-head"><h3>${esc(factory)}</h3><span class="muted">${black} black · ${white} white</span></div>`
+      ));
+      appendHandleTable(host, list, detailCols);
     });
-    thead.appendChild(hr);
-    const tb = document.createElement("tbody");
-    group.rows.forEach((r) => {
-      const tr = document.createElement("tr");
-      HANDLE_DETAIL.forEach(([key]) => {
-        const td = document.createElement("td");
-        const text = handleText(r, key);
-        if (key === "po_number") {
-          const wb = handleText(r, "workbench_id");
-          if (wb && text) {
-            const a = document.createElement("a");
-            a.href = `${CFG.WORKBENCH_BASE}/${encodeURIComponent(wb)}`;
-            a.target = "_blank";
-            a.rel = "noopener";
-            a.className = "po-link";
-            a.textContent = text;
-            a.title = "Open the workbench for " + text;
-            td.appendChild(a);
-          } else {
-            td.textContent = text;
-          }
-        } else if (key === "handle" && text) {
-          const tone = handleTone(r);
-          const tag = document.createElement("span");
-          tag.className = "handle-tag" + (tone ? " " + tone : "");
-          tag.textContent = text;
-          td.appendChild(tag);
-        } else {
-          td.textContent = text;
-          if (text) td.title = text;
-        }
-        tr.appendChild(td);
-      });
-      tb.appendChild(tr);
-    });
-    table.append(thead, tb);
-    wrap.appendChild(table);
-    host.appendChild(wrap);
   }
 
   // ───────────────────────── shell ─────────────────────────

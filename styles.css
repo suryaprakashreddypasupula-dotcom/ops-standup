@@ -358,7 +358,16 @@ table.grid th { box-shadow: 0 1px 0 var(--border); }
 #page-hanger table.grid, #page-union table.grid, #page-formotion table.grid, #page-elizur table.grid, #page-horizon table.grid, #page-upperline table.grid, #page-others table.grid { min-width: 0; width: max-content; }
 #page-hanger a.po-link, #page-union a.po-link, #page-formotion a.po-link, #page-elizur a.po-link, #page-horizon a.po-link, #page-upperline a.po-link, #page-others a.po-link { color: var(--link); font-weight: 600; text-decoration: none; }
 #page-hanger a.po-link:hover, #page-union a.po-link:hover, #page-formotion a.po-link:hover, #page-elizur a.po-link:hover, #page-horizon a.po-link:hover, #page-upperline a.po-link:hover, #page-others a.po-link:hover { text-decoration: underline; }
+#page-handles { overflow: auto; }
+#page-handles .grid-wrap { flex: none; overflow: visible; }
 #page-handles table.grid { min-width: 0; width: max-content; }
+.handle-black { margin-top: 28px; }
+.handle-block-head { display: flex; align-items: center; gap: 12px; margin: 16px 0 8px; flex-wrap: wrap; }
+.handle-block-head h3 { margin: 0; font-size: 15px; }
+.handle-block-head .btn { margin-left: auto; }
+.handle-download { justify-content: flex-end; }
+.handle-co { font-weight: 700; }
+.handle-fac { margin-top: 2px; color: var(--muted); font-size: 12px; font-weight: 500; }
 #page-handles tr.handle-company { cursor: pointer; }
 #page-handles a.po-link { color: var(--link); font-weight: 600; text-decoration: none; }
 #page-handles a.po-link:hover { text-decoration: underline; }
