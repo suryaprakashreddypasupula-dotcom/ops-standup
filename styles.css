@@ -448,6 +448,12 @@ table.report td.empty-row { text-align: center; color: var(--muted); padding: 24
 .pill.slow { background: #fde8e8; color: var(--danger); }
 .pill.steady { background: #eef1f6; color: var(--muted); }
 .vol-note { margin: 0 0 8px; }
+.vol-box {
+  border: 1px solid var(--border); border-radius: 10px; background: #fff;
+  padding: 12px 14px 10px; margin: 0 0 14px;
+}
+.vol-box .section-title { margin-top: 0; }
+.vol-box .grid-wrap { box-shadow: none; }
 .vol-overview { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 12px; }
 .vol-card {
   background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px;

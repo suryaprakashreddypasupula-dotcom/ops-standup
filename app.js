@@ -2835,11 +2835,29 @@
   }
   // ALL Clinical and ALL Consumer are totals the Sheet already computed.
   // Adding them on top of the companies counts every order twice.
+  // Diabetic and Functional are the same orders split by insole type.
   function isRollupRow(row) {
     return state.volumeCols.some((c) => {
       const s = String(row[c] == null ? "" : row[c]).trim().toLowerCase();
       return s === "all" || s.startsWith("all ");
     });
+  }
+  function rollupLabel(row) {
+    return state.volumeCols.map((c) => String(row[c] == null ? "" : row[c]).trim().toLowerCase()).join(" ");
+  }
+  function rollupGroup(row) {
+    const s = rollupLabel(row);
+    if (/\bdiabetic\b/.test(s) || /\bfunctional\b/.test(s)) return "type";
+    if (/\bclinical\b/.test(s) || /\bconsumer\b/.test(s)) return "audience";
+    return "other";
+  }
+  function rollupSort(row) {
+    const s = rollupLabel(row);
+    if (/\bclinical\b/.test(s)) return 0;
+    if (/\bconsumer\b/.test(s)) return 1;
+    if (/\bdiabetic\b/.test(s)) return 0;
+    if (/\bfunctional\b/.test(s)) return 1;
+    return 2;
   }
   function volumeHistory(model, company) {
     return model.weeks.map((w) => {
@@ -3183,7 +3201,7 @@
     const throughTxt = model.through && model.current && model.current.date ? (model.bdIn >= 5 ? "" : `, ${model.bdIn} of 5 business days in (through ${formatMD(model.through)})`) : "";
     const hidden = state.volume.length - rows.length;
     const legend = `${weekTxt} (pack ${packLabel})${prevTxt}${throughTxt}. ${companyRows.length} ${companyRows.length === 1 ? "company" : "companies"}`
-      + (rollupRows.length ? `. ${rollupRows.length} ALL ${rollupRows.length === 1 ? "total is" : "totals are"} shown separately and not added in.` : "")
+      + (rollupRows.length ? ". Clinical and Consumer, then Diabetic and Functional, sit in their own boxes and stay out of the company total." : "")
       + (hidden ? ` ${hidden} other-week ${hidden === 1 ? "row stays" : "rows stay"} on the Sheet.` : "")
       + " Click a company for its history and next-week read.";
     host.appendChild(el(`<div class="page-head"><h2>Company Volume Trends</h2><span class="legend">${legend}</span></div>`));
@@ -3215,9 +3233,19 @@
     host.appendChild(strip);
 
     if (rollupRows.length) {
-      host.appendChild(el(`<div class="section-title">Sheet totals</div>`));
-      host.appendChild(el(`<p class="muted vol-note">ALL Clinical and ALL Consumer are the Sheet's own totals. They are not added to the companies.</p>`));
-      host.appendChild(volumeSheetTable(model, rollupRows, false));
+      const audience = rollupRows.filter((r) => rollupGroup(r) === "audience").sort((a, b) => rollupSort(a) - rollupSort(b));
+      const types = rollupRows.filter((r) => rollupGroup(r) === "type").sort((a, b) => rollupSort(a) - rollupSort(b));
+      const other = rollupRows.filter((r) => rollupGroup(r) === "other");
+      const box = (title, note, list) => {
+        const card = el(`<section class="vol-box"></section>`);
+        card.appendChild(el(`<div class="section-title">${esc(title)}</div>`));
+        card.appendChild(el(`<p class="muted vol-note">${esc(note)}</p>`));
+        card.appendChild(volumeSheetTable(model, list, false));
+        host.appendChild(card);
+      };
+      if (audience.length) box("Clinical and Consumer", "The week's orders, split by who they are for. These stay out of the company list.", audience);
+      if (types.length) box("Diabetic and Functional", "The same week's orders, split by insole type.", types);
+      if (other.length) box("Sheet totals", "Totals already on the Sheet. These stay out of the company list.", other);
     }
 
     // Table: every column the Sheet has, in Sheet order, plus Outlook.

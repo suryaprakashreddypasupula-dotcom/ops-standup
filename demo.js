@@ -255,8 +255,16 @@
     const clinical = Object.keys(VOL_SERIES).reduce((sum, co) => sum + VOL_SERIES[co][i], 0) + (i >= 12 ? newSeries[i - 12] : 0);
     const consumer = 10;
     const prevC = i > 0 ? Object.keys(VOL_SERIES).reduce((sum, co) => sum + VOL_SERIES[co][i - 1], 0) + (i - 1 >= 12 ? newSeries[i - 1 - 12] : 0) : "";
+    const both = clinical + consumer;
+    const diabetic = Math.round(both * 0.58);
+    const functional = both - diabetic;
+    const prevBoth = prevC === "" ? "" : prevC + consumer;
+    const prevDiabetic = prevBoth === "" ? "" : Math.round(prevBoth * 0.58);
+    const prevFunctional = prevBoth === "" ? "" : prevBoth - prevDiabetic;
     pushVol("ALL", "Clinical", i, clinical, prevC, "", "");
     pushVol("ALL", "Consumer", i, consumer, i > 0 ? consumer : "", "", "");
+    pushVol("ALL", "Diabetic", i, diabetic, prevDiabetic, "", "");
+    pushVol("ALL", "Functional", i, functional, prevFunctional, "", "");
   }
   volTab.push(["Sample Clinic A", "Clinical", "10/5/2026", 99, 48, "106.3%", 200, 140, "42.9%"]);
   TABS[`${P} Company Volume Trends`] = volTab;
