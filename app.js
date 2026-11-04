@@ -3320,8 +3320,8 @@
   }
 
   // ───────────────────────── Handle Colors ─────────────────────────
-  // One row per company. A click opens that company's orders. The PO uses
-  // workbench_id. White rows have no handle reason.
+  // Black handles, split by facility, with one CSV of every company.
+  // The PO uses workbench_id. White rows have no handle reason.
   function handleText(row, name) {
     return String(row[name] == null ? "" : row[name]).trim();
   }
@@ -3330,19 +3330,6 @@
     if (h === "black") return "black";
     if (h === "white") return "white";
     return "";
-  }
-  function handleGroups(rows) {
-    const map = new Map();
-    rows.forEach((r) => {
-      const name = handleText(r, "company_name") || "(No company)";
-      if (!map.has(name)) map.set(name, { name, black: 0, white: 0, rows: [] });
-      const g = map.get(name);
-      g.rows.push(r);
-      const tone = handleTone(r);
-      if (tone === "black") g.black += 1;
-      else if (tone === "white") g.white += 1;
-    });
-    return [...map.values()].sort((a, b) => a.name.localeCompare(b));
   }
   const HANDLE_DETAIL = [
     ["po_number", "PO"],
@@ -3481,94 +3468,18 @@
       host.appendChild(el(`<div class="empty">No Handle Colors tab in this Sheet.</div>`));
       return;
     }
-    const groups = handleGroups(rows);
-    const open = state.handleCompany ? groups.find((g) => g.name === state.handleCompany) : null;
-    if (state.handleCompany && !open) state.handleCompany = "";
-    if (open) renderHandleOrders(host, title, open);
-    else renderHandleCompanies(host, title, groups);
-  }
-  function renderHandleCompanies(host, title, groups) {
-    const black = groups.reduce((n, g) => n + g.black, 0);
-    const white = groups.reduce((n, g) => n + g.white, 0);
-    host.appendChild(el(
-      `<div class="page-head"><h2>${esc(title)}</h2><span class="legend">${groups.length} companies · ${black} black · ${white} white. Click a company to see its orders.</span></div>`
-    ));
-    const wrap = el(`<div class="grid-wrap"></div>`);
-    const table = document.createElement("table");
-    table.className = "grid";
-    const thead = document.createElement("thead");
-    const hr = document.createElement("tr");
-    ["Company", "Black", "White", "Orders"].forEach((label) => {
-      const th = document.createElement("th");
-      th.textContent = label;
-      hr.appendChild(th);
-    });
-    thead.appendChild(hr);
-    const tb = document.createElement("tbody");
-    groups.forEach((g) => {
-      const tr = document.createElement("tr");
-      tr.className = "handle-company";
-      tr.tabIndex = 0;
-      const open = () => { state.handleCompany = g.name; renderHandles(); };
-      tr.onclick = open;
-      tr.onkeydown = (e) => {
-        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); }
-      };
-      const name = document.createElement("td");
-      const co = document.createElement("div");
-      co.className = "handle-co";
-      co.textContent = g.name;
-      name.appendChild(co);
-      handleByFacility(g.rows).forEach(([factory, list]) => {
-        const blackN = list.filter((r) => handleTone(r) === "black").length;
-        const whiteN = list.filter((r) => handleTone(r) === "white").length;
-        const line = document.createElement("div");
-        line.className = "handle-fac";
-        line.textContent = `${factory} · ${blackN} black · ${whiteN} white`;
-        name.appendChild(line);
-      });
-      const b = document.createElement("td");
-      b.className = "num black-count";
-      b.textContent = String(g.black);
-      const w = document.createElement("td");
-      w.className = "num";
-      w.textContent = String(g.white);
-      const t = document.createElement("td");
-      t.className = "num";
-      t.textContent = String(g.rows.length);
-      tr.append(name, b, w, t);
-      tb.appendChild(tr);
-    });
-    table.append(thead, tb);
-    wrap.appendChild(table);
-    host.appendChild(wrap);
-    const allRows = (groups || []).reduce((all, g) => all.concat(g.rows), []);
-    appendBlackHandleLists(host, allRows);
-    const blackRows = allRows.filter((r) => handleTone(r) === "black")
+    const blackRows = rows.filter((r) => handleTone(r) === "black")
       .sort((a, b) => handleText(a, "company_name").localeCompare(handleText(b, "company_name")) || handleText(a, "po_number").localeCompare(handleText(b, "po_number")));
+    host.appendChild(el(
+      `<div class="page-head"><h2>${esc(title)}</h2><span class="legend">${blackRows.length} black ${blackRows.length === 1 ? "handle" : "handles"}.</span></div>`
+    ));
+    appendBlackHandleLists(host, rows);
     const download = el(`<div class="handle-block-head handle-download"></div>`);
     const allBtn = el(`<button type="button" class="btn">Download CSV</button>`);
     allBtn.title = blackHandleFilename();
     allBtn.onclick = () => downloadCsv(blackHandleFilename(), BLACK_EXPORT, blackRows);
     download.appendChild(allBtn);
     host.appendChild(download);
-  }
-  function renderHandleOrders(host, title, group) {
-    const back = el(`<button type="button" class="linklike back-board">All companies</button>`);
-    back.onclick = () => { state.handleCompany = ""; renderHandles(); };
-    host.appendChild(back);
-    host.appendChild(el(
-      `<div class="page-head"><h2>${esc(group.name)}</h2><span class="legend">${group.black} black · ${group.white} white · ${esc(title)}</span></div>`
-    ));
-    const detailCols = HANDLE_DETAIL.filter(([key]) => key !== "factory");
-    handleByFacility(group.rows).forEach(([factory, list]) => {
-      const black = list.filter((r) => handleTone(r) === "black").length;
-      const white = list.filter((r) => handleTone(r) === "white").length;
-      host.appendChild(el(
-        `<div class="handle-block-head"><h3>${esc(factory)}</h3><span class="muted">${black} black · ${white} white</span></div>`
-      ));
-      appendHandleTable(host, list, detailCols);
-    });
   }
 
   // ───────────────────────── shell ─────────────────────────
