@@ -1181,11 +1181,11 @@
   // These people stay on the Sheet. The scoreboard skips them.
   // yatesh.makena+james.burhans shows as James Burhans. Anyone else after that
   // plus stays. A +vmakena tag on another mailbox is not Vmakena.
+  // aankala+mcbryde is Mike McBryde. Other aankala mailboxes stay Aankala.
   const HIDDEN_NAMES = [
     "pedro sanchez",
     "eric",
     "luke birdeau",
-    "zach smith",
     "suryaprakashreddy pasupula",
     "charles lussier",
     "varun addagulla",
@@ -1197,6 +1197,7 @@
 
   function personLocal(who) {
     let local = String(who || "").split("@")[0].trim();
+    if (nameKey(local) === "aankala+mcbryde") return "Mike McBryde";
     const plus = local.indexOf("+");
     if (plus > 0 && nameKey(local.slice(0, plus)) === "yatesh makena") local = local.slice(plus + 1);
     else if (plus > 0) local = local.slice(0, plus);
