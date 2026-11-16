@@ -3655,6 +3655,7 @@
       $("gate").hidden = true; $("tabs").hidden = false;
       $("pack-title").textContent = state.title;
       $("user").textContent = state.user; $("signout").hidden = false;
+      await fillPackMenu();
       renderSummary(); renderDelinquency(); renderOts(); renderTatReport(); renderPeople(); renderHolds(); renderHanger(); renderUnion(); renderFormotion(); renderElizur(); renderHorizon(); renderUpperline(); renderOthers(); renderVolume(); renderHandles();
       showPage(state.delinquency.length && !state.summary.length ? "delinquency" : "summary");
     } catch (e) {
@@ -3694,6 +3695,78 @@
     return files[0].id;
   }
 
+  // This visit only. The next visit still opens the newest pack.
+  function packNightLabel(name) {
+    const m = String(name || "").match(/(\d{1,2})_(\d{1,2})/);
+    return m ? (Number(m[1]) + "/" + Number(m[2])) : String(name || "").trim();
+  }
+  async function listNightlyPacks() {
+    const q = "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false and name contains 'Ops Standup'";
+    const url = "https://www.googleapis.com/drive/v3/files?pageSize=40&orderBy=createdTime desc"
+      + "&fields=files(id,name,createdTime)&supportsAllDrives=true&includeItemsFromAllDrives=true"
+      + "&q=" + encodeURIComponent(q);
+    const data = await api(url);
+    const files = (data.files || []).filter((f) => /^\d{1,2}_\d{1,2}\s+Ops Standup\b/i.test(String(f.name || "").trim()) && !/Priority|Hanger/i.test(f.name || ""));
+    files.sort((a, b) => String(b.createdTime || "").localeCompare(String(a.createdTime || "")));
+    const seen = new Set();
+    const packs = [];
+    files.forEach((f) => {
+      const label = packNightLabel(f.name);
+      if (seen.has(label)) return;
+      seen.add(label);
+      packs.push({ id: f.id, label: label });
+    });
+    return packs;
+  }
+  async function fillPackMenu() {
+    const menu = $("pack-pick");
+    if (!menu) return;
+    let packs = [];
+    try { packs = await listNightlyPacks(); } catch (_) { packs = []; }
+    if (state.sheetId && !packs.some((p) => p.id === state.sheetId)) {
+      packs.unshift({ id: state.sheetId, label: packNightLabel(state.title) });
+    }
+    menu.innerHTML = "";
+    packs.forEach((p) => {
+      const opt = document.createElement("option");
+      opt.value = p.id;
+      opt.textContent = p.label;
+      menu.appendChild(opt);
+    });
+    menu.value = state.sheetId || "";
+    menu.hidden = !packs.length;
+  }
+  async function showNight(id) {
+    state.sheetId = id;
+    await loadSheet(id);
+    await loadPersonRejections();
+    if (!state.demo) {
+      const link = $("sheet-link");
+      link.href = `https://docs.google.com/spreadsheets/d/${id}`;
+      link.hidden = false;
+    }
+    $("pack-title").textContent = state.title;
+    renderSummary(); renderDelinquency(); renderOts(); renderTatReport(); renderPeople(); renderHolds(); renderHanger(); renderUnion(); renderFormotion(); renderElizur(); renderHorizon(); renderUpperline(); renderOthers(); renderVolume(); renderHandles();
+  }
+  async function openNight(id) {
+    const menu = $("pack-pick");
+    if (!menu || !id || id === state.sheetId) return;
+    const previous = state.sheetId;
+    const stay = state.page;
+    menu.disabled = true;
+    closeDrawer();
+    try {
+      await showNight(id);
+      showPage(stay || "summary");
+    } catch (e) {
+      toast(e.message || "Could not open that night", true);
+      try { await showNight(previous); showPage(stay || "summary"); } catch (_) {}
+      menu.value = state.sheetId || previous;
+    } finally {
+      menu.disabled = false;
+    }
+  }
+
   function init() {
     const params = new URLSearchParams(location.search);
     // ?demo=1 renders synthetic sample data (demo.js) with no Google sign-in,
@@ -3712,6 +3785,7 @@
     };
     $("sheet-input").addEventListener("keydown", (e) => { if (e.key === "Enter") $("signin").click(); });
     $("signout").onclick = signOut;
+    $("pack-pick").onchange = () => openNight($("pack-pick").value);
     document.querySelectorAll(".tab").forEach((b) => { b.onclick = () => showPage(b.dataset.page); });
     $("drawer-close").onclick = closeDrawer; $("scrim").onclick = closeDrawer;
     document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDrawer(); });

@@ -45,6 +45,11 @@ body { display: flex; flex-direction: column; min-height: 100vh; }
   max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .pack:empty { display: none; }
+.pack-pick {
+  font: inherit; font-size: 12px; font-weight: 600; color: #334155;
+  background: #fff; border: 1px solid var(--border); border-radius: 999px;
+  padding: 3px 8px; max-width: 120px;
+}
 .user { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .topbar .btn { white-space: nowrap; }
 .sheet-link { color: var(--link); text-decoration: none; font-size: 12px; font-weight: 600; white-space: nowrap; }

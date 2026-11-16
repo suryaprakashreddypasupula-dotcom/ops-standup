@@ -311,6 +311,18 @@
     ],
   };
 
+  const OLDER = {
+    "9_28 Ops Summary": [
+      ["timeframe", "factory", "category", "metric", "value"],
+      ["Last 2d", "SOLEMATE", "OTD", "Older night check", 4],
+    ],
+    "9_28 Delinquency by Station": [
+      ["factory", "station_group", "status", "wip", "customer_overdue", "Step overdue", "due_today", "on_track", "completed_yesterday", "completed_2_days_ago", "rejected_yesterday", "rejected_2_days_ago"],
+      ["SOLEMATE", "Printing", "PRINTING — Not Queued", 1, 0, 0, 0, 1, 0, 0, 0, 0],
+    ],
+    "Notes": [["ts", "user", "page", "level", "factory", "station_group", "status", "bucket", "po_number", "note"]],
+  };
+
   function unq(name) { return name.replace(/^'|'$/g, "").replace(/''/g, "'"); }
   // Text color runs per cell, like the real Sheet keeps them. Key: tab\trow\tcol (0-based).
   const RUNS = new Map();
@@ -325,6 +337,13 @@
       if (url.includes("/oauth2/v3/userinfo")) return { email: "you@pebblehealth.io" };
       if (url.includes("/drive/v3/files") && /Rejections by Person/i.test(decodeURIComponent(url))) {
         return { files: [{ id: "rej-demo", name: "Rejections by Person by Day", createdTime: "2026-09-29T12:00:00Z" }] };
+      }
+      if (url.includes("/drive/v3/files") && /Ops Standup/i.test(decodeURIComponent(url))) {
+        return { files: [
+          { id: "demo", name: "9_29 Ops Standup", createdTime: "2026-09-29T12:00:00Z" },
+          { id: "demo-9-28", name: "9_28 Ops Standup", createdTime: "2026-09-28T12:00:00Z" },
+          { id: "stray-copy", name: "Ops Standup copy", createdTime: "2026-09-29T13:00:00Z" },
+        ] };
       }
       if (/\/spreadsheets\/rej-demo\?fields=/.test(url)) {
         return { properties: { title: "Rejections by Person by Day (demo)" }, sheets: Object.keys(REJ).map((t) => ({ properties: { title: t } })) };
@@ -374,6 +393,14 @@
           else RUNS.delete(tab + "\t" + r + "\t" + c);
         });
         return { replies: [{}] };
+      }
+      if (/\/spreadsheets\/demo-9-28\?fields=/.test(url)) {
+        const sheets = Object.keys(OLDER).map((t, i) => ({ properties: { title: t, sheetId: i + 1, gridProperties: { columnCount: (OLDER[t][0] || []).length } } }));
+        return { properties: { title: "9_28 Ops Standup" }, sheets: sheets };
+      }
+      if (url.includes("/spreadsheets/demo-9-28/values:batchGet")) {
+        const ranges = [...new URL(url).searchParams.getAll("ranges")].map((t) => unq(t.split("!")[0]));
+        return { valueRanges: ranges.map((t) => ({ range: `'${t}'!A1:Z`, values: OLDER[t] || [] })) };
       }
       if (url.includes("/values:batchGet")) {
         const ranges = [...new URL(url).searchParams.getAll("ranges")].map((t) => unq(t.split("!")[0]));

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow">
   <title>Ops Standup</title>
-  <link rel="stylesheet" href="styles.css?v=28">
+  <link rel="stylesheet" href="styles.css?v=29">
 </head>
 <body>
   <header class="topbar">
@@ -13,6 +13,7 @@
       <div class="brand">Ops Standup</div>
       <div class="spacer"></div>
       <div class="pack" id="pack-title"></div>
+      <select id="pack-pick" class="pack-pick" hidden aria-label="Choose a night"></select>
       <a class="sheet-link" id="sheet-link" target="_blank" rel="noopener" hidden>Open Sheet</a>
       <div class="user" id="user"></div>
       <button class="btn ghost" id="signout" hidden>Sign out</button>
@@ -86,8 +87,8 @@
   <div class="toast" id="toast" hidden></div>
 
   <script src="config.js?v=1"></script>
-  <script src="demo.js?v=29"></script>
-  <script src="app.js?v=51"></script>
+  <script src="demo.js?v=30"></script>
+  <script src="app.js?v=52"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </body>
 </html>
