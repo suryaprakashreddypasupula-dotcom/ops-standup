@@ -57,6 +57,7 @@
     summary: [], summaryCols: [],
     delinquency: [], delinquencyCols: [],
     detail: [], detailCols: [], notes: [], quality: [],
+    pylon: [], hasPylon: false,
     reports: {},
     orders: [],
     byPerson: [], byPersonCols: [],
@@ -259,6 +260,7 @@
     const tVolume = findTab("Company Volume Trends");
     const tHandles = findTab("Handle Colors");
     const tQuality = findTab("Quality Detail");
+    const tPylon = findTab("Pylon Metric Audit");
     if (!tSummary && !tDel) throw new Error(`This Sheet has no "Ops Summary" or "Delinquency by Station" tab. Is it the Ops Standup Sheet?`);
 
     // OTS and TAT are read in full. Their own tabs show every column the
@@ -268,7 +270,7 @@
       [tSummary, null], [tDel, null], [tDetail, null], [tNotes, null],
       [tOts, null], [tTat, null], [tPerson, null], [tHolds, null],
       [tHanger, null], [tUnion, null], [tFormotion, null], [tElizur, null], [tHorizon, null], [tUpperline, null], [tOthers, null],
-      [tVolume, null], [tHandles, null], [tQuality, null],
+      [tVolume, null], [tHandles, null], [tQuality, null], [tPylon, null],
     ].filter((pair) => pair[0]);
     const ranges = wanted.map(([tab, cols]) => "ranges=" + encodeURIComponent(rangeOf(tab, cols)));
     const data = await api(`${SHEETS_API}/${sheetId}/values:batchGet?${ranges.join("&")}&valueRenderOption=FORMATTED_VALUE`);
@@ -328,6 +330,8 @@
     state.handleCols = handles.cols;
     state.handleCompany = "";
     state.quality = toObjects(byTab[tQuality] || []).rows;
+    state.pylon = toObjects(byTab[tPylon] || []).rows;
+    state.hasPylon = !!tPylon;
     state.hasDetail = !!tDetail;
     state.hasNotes = !!tNotes;
     await loadNoteColors([
@@ -882,8 +886,17 @@
         const td = document.createElement("td"); const v = r[c];
         if (c === "value" && num(v) !== null) {
           td.className = "num"; td.textContent = v;
-          const list = ordersForMetric(r);
-          const insoles = list.length ? [] : insolesForMetric(r);
+          // Customer Support rows are whatever this night's Sheet wrote, in
+          // that order. A completed count of 0 stays. Blank outbound TTFR
+          // rows are not added back.
+          const waitKind = pylonWaitKind(r.metric);
+          if (waitKind && state.hasPylon) {
+            td.classList.add("drill");
+            td.title = "Show the tickets behind this number";
+            td.onclick = () => openPylonDrawer(r, pylonTicketsFor(r, waitKind), waitKind);
+          }
+          const list = waitKind ? [] : ordersForMetric(r);
+          const insoles = list.length ? [] : (waitKind ? [] : insolesForMetric(r));
           if (list.length && num(v) !== 0) {
             td.classList.add("drill");
             td.title = "Show the orders behind this number";
@@ -1114,6 +1127,120 @@
       };
       paint();
       card.appendChild(notesDiv); card.appendChild(act);
+      body.appendChild(card);
+    });
+    $("drawer").hidden = false; $("scrim").hidden = false;
+  }
+
+  // Waiting on SF/Eng. was_waiting_on_sf_eng is Y only for a ticket seen in
+  // waiting_on_eng on or after 2026-11-12. Older closed tickets stay out.
+  // Observed US federal holidays so Last 2bd matches the nightly window.
+  const PYLON_HOLIDAYS = new Set([
+    "2026-01-01", "2026-01-19", "2026-02-16", "2026-05-25", "2026-06-19", "2026-07-03",
+    "2026-09-07", "2026-10-12", "2026-11-11", "2026-11-26", "2026-12-25",
+    "2027-01-01", "2027-01-18", "2027-02-15", "2027-05-31", "2027-06-18", "2027-07-05",
+    "2027-09-06", "2027-10-11", "2027-11-11", "2027-11-25", "2027-12-24", "2027-12-31",
+  ]);
+  function pylonWaitKind(metric) {
+    const m = String(metric || "").replace(/\u2014/g, "-").replace(/\s+/g, " ").trim();
+    if (m === "Pylon Waiting on SF/Eng (open count)") return "open";
+    if (m === "Pylon Waiting on SF/Eng - Completed (count)") return "done";
+    if (/^Pylon BH TTR P9[059] - Waiting on SF\/Eng\b/.test(m)) return "ttr";
+    return "";
+  }
+  function utcKey(d) {
+    const m = d.getUTCMonth() + 1;
+    const day = d.getUTCDate();
+    return d.getUTCFullYear() + "-" + (m < 10 ? "0" : "") + m + "-" + (day < 10 ? "0" : "") + day;
+  }
+  function pylonBizDay(d) {
+    const dow = d.getUTCDay();
+    return dow !== 0 && dow !== 6 && !PYLON_HOLIDAYS.has(utcKey(d));
+  }
+  function pylonBdSet(report, n) {
+    const out = [];
+    let cursor = addDays(report, -1);
+    while (out.length < n) {
+      if (pylonBizDay(cursor)) out.push(cursor);
+      cursor = addDays(cursor, -1);
+    }
+    return out;
+  }
+  function pylonCreatedDate(value) {
+    const s = String(value == null ? "" : value).trim();
+    if (!s) return null;
+    if (/[zZ]|[+-]\d{2}:?\d{2}$/.test(s) && /T|\d{4}-\d{2}-\d{2}/.test(s)) {
+      const d = new Date(s);
+      if (!isNaN(d.getTime())) {
+        const parts = new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", year: "numeric", month: "numeric", day: "numeric" }).formatToParts(d);
+        const y = Number(parts.find((p) => p.type === "year").value);
+        const m = Number(parts.find((p) => p.type === "month").value);
+        const day = Number(parts.find((p) => p.type === "day").value);
+        return new Date(Date.UTC(y, m - 1, day));
+      }
+    }
+    return parseLooseDate(s, reportDateUtc());
+  }
+  function pylonInWindow(created, timeframe) {
+    if (!created) return false;
+    const report = reportDateUtc();
+    const label = String(timeframe || "").trim();
+    const one = label.match(/^(?:Yesterday|Day Before) \((\d{1,2})_(\d{1,2})\)$/);
+    if (one) {
+      let year = report.getUTCFullYear();
+      const month = Number(one[1]);
+      if (report.getUTCMonth() + 1 <= 2 && month >= 11) year -= 1;
+      if (report.getUTCMonth() + 1 >= 11 && month <= 2) year += 1;
+      const target = new Date(Date.UTC(year, month - 1, Number(one[2])));
+      return created.getTime() === target.getTime();
+    }
+    const lastN = label.match(/^Last (\d+)d$/);
+    if (lastN) return created.getTime() >= addDays(report, -Number(lastN[1])).getTime();
+    if (label === "Last 2bd") return pylonBdSet(report, 2).some((d) => d.getTime() === created.getTime());
+    return false;
+  }
+  function pylonYes(v) {
+    const s = String(v == null ? "" : v).trim().toUpperCase();
+    return s === "Y" || s === "YES";
+  }
+  function pylonTicketsFor(row, kind) {
+    const list = (state.pylon || []).filter((ticket) => {
+      if (!pylonInWindow(pylonCreatedDate(ticket.created_at), row.timeframe)) return false;
+      if (kind === "open") return String(ticket.current_state || "").trim().toLowerCase() === "waiting_on_eng";
+      return pylonYes(ticket.was_waiting_on_sf_eng) && isTrue(ticket.resolved);
+    });
+    const ttrNum = (v) => (v == null || String(v).trim() === "" ? null : num(v));
+    list.sort((a, b) => {
+      const an = ttrNum(a.bh_ttr_min);
+      const bn = ttrNum(b.bh_ttr_min);
+      if (an == null && bn == null) return 0;
+      if (an == null) return 1;
+      if (bn == null) return -1;
+      return bn - an;
+    });
+    return list;
+  }
+  function openPylonDrawer(row, list, kind) {
+    const gridN = num(row.value);
+    $("drawer-title").textContent = row.metric;
+    let sub = `${row.timeframe}: ${list.length} ticket${list.length === 1 ? "" : "s"}`;
+    if (kind === "done" && gridN !== null && gridN !== list.length) sub += ` (the cell shows ${gridN})`;
+    if (kind !== "open") sub += ". This is the ticket's overall business-hours time from creation to close, not the time spent in Waiting on SF/Eng.";
+    $("drawer-sub").textContent = sub;
+    const body = $("drawer-body"); body.innerHTML = "";
+    body.appendChild(el(`<div class="section-title">Tickets</div>`));
+    if (!list.length) body.appendChild(el(`<div class="empty">No matching tickets in Pylon Metric Audit.</div>`));
+    list.forEach((ticket) => {
+      const card = el(`<div class="po-card"></div>`);
+      const href = String(ticket.link || "").trim();
+      const label = String(ticket.ticket_number == null ? "" : ticket.ticket_number);
+      const head = href ? `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(label)}</a>` : `<b>${esc(label)}</b>`;
+      card.appendChild(el(`<div class="po-head">${head}</div>`));
+      if (ticket.title) card.appendChild(el(`<div class="po-meta">${esc(ticket.title)}</div>`));
+      const meta = [];
+      if (ticket.current_state) meta.push(esc(ticket.current_state));
+      if (ticket.bh_ttr_min != null && String(ticket.bh_ttr_min) !== "") meta.push(esc(String(ticket.bh_ttr_min)) + " bh min");
+      if (meta.length) card.appendChild(el(`<div class="po-meta">${meta.join(" · ")}</div>`));
       body.appendChild(card);
     });
     $("drawer").hidden = false; $("scrim").hidden = false;
