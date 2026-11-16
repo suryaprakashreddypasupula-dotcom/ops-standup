@@ -342,6 +342,7 @@
         return { files: [
           { id: "demo", name: "9_29 Ops Standup", createdTime: "2026-09-29T12:00:00Z" },
           { id: "demo-9-28", name: "9_28 Ops Standup", createdTime: "2026-09-28T12:00:00Z" },
+          { id: "demo-8-15", name: "8_15 Ops Standup", createdTime: "2026-08-15T12:00:00Z" },
           { id: "stray-copy", name: "Ops Standup copy", createdTime: "2026-09-29T13:00:00Z" },
         ] };
       }
@@ -394,11 +395,12 @@
         });
         return { replies: [{}] };
       }
-      if (/\/spreadsheets\/demo-9-28\?fields=/.test(url)) {
+      if (/\/spreadsheets\/(demo-9-28|demo-8-15)\?fields=/.test(url)) {
+        const title = url.includes("demo-8-15") ? "8_15 Ops Standup" : "9_28 Ops Standup";
         const sheets = Object.keys(OLDER).map((t, i) => ({ properties: { title: t, sheetId: i + 1, gridProperties: { columnCount: (OLDER[t][0] || []).length } } }));
-        return { properties: { title: "9_28 Ops Standup" }, sheets: sheets };
+        return { properties: { title: title }, sheets: sheets };
       }
-      if (url.includes("/spreadsheets/demo-9-28/values:batchGet")) {
+      if (/\/spreadsheets\/(demo-9-28|demo-8-15)\/values:batchGet/.test(url)) {
         const ranges = [...new URL(url).searchParams.getAll("ranges")].map((t) => unq(t.split("!")[0]));
         return { valueRanges: ranges.map((t) => ({ range: `'${t}'!A1:Z`, values: OLDER[t] || [] })) };
       }

@@ -3696,9 +3696,25 @@
   }
 
   // This visit only. The next visit still opens the newest pack.
+  let nightPacks = [];
+  let calMonth = null;
   function packNightLabel(name) {
     const m = String(name || "").match(/(\d{1,2})_(\d{1,2})/);
     return m ? (Number(m[1]) + "/" + Number(m[2])) : String(name || "").trim();
+  }
+  function packNightDate(name, createdTime) {
+    const m = String(name || "").match(/(\d{1,2})_(\d{1,2})/);
+    if (!m) return null;
+    const month = Number(m[1]);
+    const day = Number(m[2]);
+    const created = createdTime ? new Date(createdTime) : null;
+    let year = created && !isNaN(created.getTime()) ? created.getUTCFullYear() : new Date().getUTCFullYear();
+    if (created && !isNaN(created.getTime())) {
+      const cm = created.getUTCMonth() + 1;
+      if (cm === 1 && month === 12) year -= 1;
+      if (cm === 12 && month === 1) year += 1;
+    }
+    return new Date(Date.UTC(year, month - 1, day));
   }
   async function listNightlyPacks() {
     const q = "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false and name contains 'Ops Standup'";
@@ -3714,27 +3730,80 @@
       const label = packNightLabel(f.name);
       if (seen.has(label)) return;
       seen.add(label);
-      packs.push({ id: f.id, label: label });
+      packs.push({ id: f.id, label: label, date: packNightDate(f.name, f.createdTime) });
     });
     return packs;
   }
+  function paintPackPill() {
+    const btn = $("pack-pick");
+    if (!btn) return;
+    const pack = nightPacks.find((p) => p.id === state.sheetId);
+    btn.textContent = pack ? pack.label : packNightLabel(state.title);
+  }
+  function closePackPop() {
+    const pop = $("pack-pop");
+    const btn = $("pack-pick");
+    if (pop) pop.hidden = true;
+    if (btn) btn.setAttribute("aria-expanded", "false");
+  }
+  function renderPackCalendar() {
+    const grid = $("pack-grid");
+    const label = $("pack-month");
+    if (!grid || !calMonth) return;
+    label.textContent = calMonth.toLocaleString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
+    const year = calMonth.getUTCFullYear();
+    const month = calMonth.getUTCMonth();
+    const firstDow = new Date(Date.UTC(year, month, 1)).getUTCDay();
+    const days = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+    grid.innerHTML = "";
+    for (let i = 0; i < firstDow; i++) grid.appendChild(el(`<span class="pack-empty"></span>`));
+    for (let day = 1; day <= days; day++) {
+      const key = utcKey(new Date(Date.UTC(year, month, day)));
+      const pack = nightPacks.find((p) => p.date && utcKey(p.date) === key);
+      if (!pack) {
+        grid.appendChild(el(`<span class="pack-day">${day}</span>`));
+        continue;
+      }
+      const b = el(`<button type="button" class="pack-day${pack.id === state.sheetId ? " on" : ""}">${day}</button>`);
+      b.onclick = (e) => { e.stopPropagation(); closePackPop(); openNight(pack.id); };
+      grid.appendChild(b);
+    }
+    const months = nightPacks.filter((p) => p.date).map((p) => p.date.getUTCFullYear() * 12 + p.date.getUTCMonth());
+    const cur = year * 12 + month;
+    $("pack-prev").disabled = !months.some((n) => n < cur);
+    $("pack-next").disabled = !months.some((n) => n > cur);
+  }
+  function shiftPackMonth(delta) {
+    if (!calMonth) return;
+    calMonth = new Date(Date.UTC(calMonth.getUTCFullYear(), calMonth.getUTCMonth() + delta, 1));
+    renderPackCalendar();
+  }
+  function togglePackPop() {
+    const pop = $("pack-pop");
+    const btn = $("pack-pick");
+    if (!pop || !btn || $("pack-cal").hidden) return;
+    const opening = pop.hidden;
+    pop.hidden = !opening;
+    btn.setAttribute("aria-expanded", opening ? "true" : "false");
+    if (!opening) return;
+    const current = nightPacks.find((p) => p.id === state.sheetId);
+    if (current && current.date) calMonth = new Date(Date.UTC(current.date.getUTCFullYear(), current.date.getUTCMonth(), 1));
+    renderPackCalendar();
+  }
   async function fillPackMenu() {
-    const menu = $("pack-pick");
-    if (!menu) return;
+    const wrap = $("pack-cal");
+    if (!wrap) return;
     let packs = [];
     try { packs = await listNightlyPacks(); } catch (_) { packs = []; }
     if (state.sheetId && !packs.some((p) => p.id === state.sheetId)) {
-      packs.unshift({ id: state.sheetId, label: packNightLabel(state.title) });
+      packs.unshift({ id: state.sheetId, label: packNightLabel(state.title), date: packNightDate(state.title, "") });
     }
-    menu.innerHTML = "";
-    packs.forEach((p) => {
-      const opt = document.createElement("option");
-      opt.value = p.id;
-      opt.textContent = p.label;
-      menu.appendChild(opt);
-    });
-    menu.value = state.sheetId || "";
-    menu.hidden = !packs.length;
+    nightPacks = packs;
+    const current = packs.find((p) => p.id === state.sheetId);
+    if (current && current.date) calMonth = new Date(Date.UTC(current.date.getUTCFullYear(), current.date.getUTCMonth(), 1));
+    paintPackPill();
+    wrap.hidden = !packs.length;
+    closePackPop();
   }
   async function showNight(id) {
     state.sheetId = id;
@@ -3749,11 +3818,11 @@
     renderSummary(); renderDelinquency(); renderOts(); renderTatReport(); renderPeople(); renderHolds(); renderHanger(); renderUnion(); renderFormotion(); renderElizur(); renderHorizon(); renderUpperline(); renderOthers(); renderVolume(); renderHandles();
   }
   async function openNight(id) {
-    const menu = $("pack-pick");
-    if (!menu || !id || id === state.sheetId) return;
+    const btn = $("pack-pick");
+    if (!btn || !id || id === state.sheetId) return;
     const previous = state.sheetId;
     const stay = state.page;
-    menu.disabled = true;
+    btn.disabled = true;
     closeDrawer();
     try {
       await showNight(id);
@@ -3761,9 +3830,9 @@
     } catch (e) {
       toast(e.message || "Could not open that night", true);
       try { await showNight(previous); showPage(stay || "summary"); } catch (_) {}
-      menu.value = state.sheetId || previous;
     } finally {
-      menu.disabled = false;
+      btn.disabled = false;
+      paintPackPill();
     }
   }
 
@@ -3785,10 +3854,16 @@
     };
     $("sheet-input").addEventListener("keydown", (e) => { if (e.key === "Enter") $("signin").click(); });
     $("signout").onclick = signOut;
-    $("pack-pick").onchange = () => openNight($("pack-pick").value);
+    $("pack-pick").onclick = (e) => { e.stopPropagation(); togglePackPop(); };
+    $("pack-prev").onclick = (e) => { e.stopPropagation(); shiftPackMonth(-1); };
+    $("pack-next").onclick = (e) => { e.stopPropagation(); shiftPackMonth(1); };
+    document.addEventListener("click", (e) => {
+      const cal = $("pack-cal");
+      if (cal && !cal.hidden && !cal.contains(e.target)) closePackPop();
+    });
     document.querySelectorAll(".tab").forEach((b) => { b.onclick = () => showPage(b.dataset.page); });
     $("drawer-close").onclick = closeDrawer; $("scrim").onclick = closeDrawer;
-    document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDrawer(); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closePackPop(); closeDrawer(); } });
   }
 
   document.addEventListener("DOMContentLoaded", init);

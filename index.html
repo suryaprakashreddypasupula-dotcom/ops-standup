@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow">
   <title>Ops Standup</title>
-  <link rel="stylesheet" href="styles.css?v=29">
+  <link rel="stylesheet" href="styles.css?v=30">
 </head>
 <body>
   <header class="topbar">
@@ -13,7 +13,18 @@
       <div class="brand">Ops Standup</div>
       <div class="spacer"></div>
       <div class="pack" id="pack-title"></div>
-      <select id="pack-pick" class="pack-pick" hidden aria-label="Choose a night"></select>
+      <div class="pack-cal" id="pack-cal" hidden>
+        <button type="button" class="pack-pick" id="pack-pick" aria-haspopup="dialog" aria-expanded="false" aria-label="Choose a night"></button>
+        <div class="pack-pop" id="pack-pop" hidden role="dialog" aria-label="Choose a night">
+          <div class="pack-pop-head">
+            <button type="button" class="pack-nav" id="pack-prev" aria-label="Previous month">‹</button>
+            <div id="pack-month"></div>
+            <button type="button" class="pack-nav" id="pack-next" aria-label="Next month">›</button>
+          </div>
+          <div class="pack-dow"><span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span></div>
+          <div class="pack-grid" id="pack-grid"></div>
+        </div>
+      </div>
       <a class="sheet-link" id="sheet-link" target="_blank" rel="noopener" hidden>Open Sheet</a>
       <div class="user" id="user"></div>
       <button class="btn ghost" id="signout" hidden>Sign out</button>
@@ -87,8 +98,8 @@
   <div class="toast" id="toast" hidden></div>
 
   <script src="config.js?v=1"></script>
-  <script src="demo.js?v=30"></script>
-  <script src="app.js?v=52"></script>
+  <script src="demo.js?v=31"></script>
+  <script src="app.js?v=53"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </body>
 </html>
