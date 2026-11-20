@@ -678,11 +678,15 @@
       n.bucket === row.timeframe && n.factory === row.factory && n.status === row.metric));
     return legacy.concat(notesOnRow(row, state.summaryCols).filter((n) => n.po_number === po));
   }
-  function notesForPerson(station, who) {
+  function notesForPerson(station, who, facility) {
     const email = String(who || "").toLowerCase();
     const legacy = kept(state.notes.filter((n) => n.page === "people" && n.level === "person" && n.station_group === station && String(n.status || "").toLowerCase() === email));
     const key = personKey(who);
-    const rows = state.byPerson.filter((r) => String(r.station || "").trim() === station && (String(r.completed_by || "").toLowerCase() === email || personKey(r.completed_by) === key));
+    const rows = state.byPerson.filter((r) => {
+      if (String(r.station || "").trim() !== station) return false;
+      if (facility && printingFacility(r) !== facility) return false;
+      return String(r.completed_by || "").toLowerCase() === email || personKey(r.completed_by) === key;
+    });
     return legacy.concat(rows.flatMap((r) => notesOnRow(r, state.byPersonCols)));
   }
   function notesForHold(row) {
@@ -1358,6 +1362,12 @@
     return s === "printing" || s === "print";
   }
 
+  // Printing rows carry a facility (SOLEFORGE, SOLEMATE). Other stations do not.
+  function printingFacility(row) {
+    if (!isPrintingStation(row && row.station)) return "";
+    return String((row && (row.facility || row.factory)) || "").trim();
+  }
+
   function displayName(who) {
     let local = personLocal(who).replace(/[._]+/g, " ").trim();
     if (!local) return "Unknown";
@@ -1465,15 +1475,17 @@
       const who = String(row.completed_by || "").trim();
       if (!station || !who) return;
       if (isHiddenPerson(who)) return;
+      const facility = printingFacility(row);
       const group = String(row.station_group || "").trim();
       const label = boardName(station, who, group);
       const bucket = (label === "Design" || label === "Printing") ? label : who;
-      const key = station + "\n" + bucket.toLowerCase();
+      const boardKey = station + "\n" + facility;
+      const key = boardKey + "\n" + bucket.toLowerCase();
       let person = grouped.get(key);
       if (!person) {
-        person = { station: station, who: bucket, days: dates.map((col) => ({ col: col, label: dateLabel(col), qty: 0, minutes: 0 })) };
+        person = { station: station, facility: facility, who: bucket, days: dates.map((col) => ({ col: col, label: dateLabel(col), qty: 0, minutes: 0 })) };
         grouped.set(key, person);
-        if (!stationOrder.includes(station)) stationOrder.push(station);
+        if (!stationOrder.includes(boardKey)) stationOrder.push(boardKey);
       }
       dates.forEach((col, i) => {
         const cell = parseThroughput(row[col]);
@@ -1481,11 +1493,14 @@
         person.days[i].minutes += cell.minutes;
       });
     });
-    const stations = stationOrder.map((station) => {
-      const people = [...grouped.values()].filter((p) => p.station === station && p.days.some((d) => d.qty > 0));
+    const stations = stationOrder.map((boardKey) => {
+      const people = [...grouped.values()].filter((p) => (p.station + "\n" + p.facility) === boardKey && p.days.some((d) => d.qty > 0));
       people.sort((a, b) => b.days[b.days.length - 1].qty - a.days[a.days.length - 1].qty || displayName(a.who).localeCompare(displayName(b.who)));
       people.forEach((p, i) => { p.rank = i + 1; });
-      return { station: station, label: stationLabel(station), people: people };
+      const station = people[0].station;
+      const facility = people[0].facility;
+      const label = facility ? stationLabel(station) + " · " + facility : stationLabel(station);
+      return { station: station, facility: facility, label: label, people: people };
     }).filter((s) => s.people.length);
     return { dates: dates, day: dateLabel(day), stations: stations };
   }
@@ -1508,6 +1523,7 @@
   function personSeries(board, person) {
     const series = [];
     board.stations.forEach((st) => {
+      if (isPrintingStation(st.station) && isPrintingStation(person.station) && (st.facility || "") !== (person.facility || "")) return;
       const matches = st.people.filter((p) => samePerson(p.who, person.who));
       if (!matches.length) return;
       const days = matches[0].days.map((d, i) => ({
@@ -1779,7 +1795,7 @@
       return;
     }
     if (state.personFocus) {
-      const station = board.stations.find((s) => s.station === state.personFocus.station);
+      const station = board.stations.find((s) => s.station === state.personFocus.station && (s.facility || "") === (state.personFocus.facility || ""));
       const person = station && station.people.find((p) => p.who.toLowerCase() === state.personFocus.who);
       if (station && person) { renderPersonDetail(host, board, station, person); return; }
       state.personFocus = null;
@@ -1803,9 +1819,9 @@
           const sent = rejectionSummary(rejectionRowsFor(person.who, station.station).here).rejected;
           if (sent) btn.appendChild(el(`<span class="unit sent-back">${sent} sent back</span>`));
         }
-        if (notesForPerson(station.station, person.who).length) btn.appendChild(el(`<span class="badge">note</span>`));
+        if (notesForPerson(station.station, person.who, station.facility).length) btn.appendChild(el(`<span class="badge">note</span>`));
         btn.onclick = () => {
-          state.personFocus = { station: station.station, who: person.who.toLowerCase(), pane: "work" };
+          state.personFocus = { station: station.station, facility: station.facility || "", who: person.who.toLowerCase(), pane: "work" };
           renderPeople();
           window.scrollTo(0, 0);
         };
@@ -1830,6 +1846,7 @@
     const idx = person.days.length - 1;
     const slices = [];
     board.stations.forEach((st) => {
+      if (isPrintingStation(st.station) && isPrintingStation(person.station) && (st.facility || "") !== (person.facility || "")) return;
       const matches = st.people.filter((p) => samePerson(p.who, person.who));
       const q = matches.reduce((sum, p) => sum + (p.days[idx] ? p.days[idx].qty : 0), 0);
       if (q > 0) slices.push({ label: st.label, qty: q });
@@ -1939,14 +1956,14 @@
     const act = noteCard.querySelector(".po-actions");
     const placeholder = `Note for ${name} at ${station.label}`;
     const paint = () => {
-      const ns = notesForPerson(station.station, person.who);
+      const ns = notesForPerson(station.station, person.who, station.facility);
       if (ns.length) fillNotes(notesEl, ns, paint, placeholder);
       else notesEl.innerHTML = `<span class="muted">No note yet.</span>`;
       act.innerHTML = "";
       const add = el(`<button type="button" class="linklike">${ns.length ? "Add another note" : "Add note"}</button>`);
       add.onclick = () => {
         showNoteEditor(act, "", placeholder, paint, async (text) => {
-          const personRow = state.byPerson.find((r) => String(r.station || "").trim() === station.station && (String(r.completed_by || "").toLowerCase() === String(person.who || "").toLowerCase() || personKey(r.completed_by) === personKey(person.who)));
+          const personRow = state.byPerson.find((r) => String(r.station || "").trim() === station.station && (!station.facility || printingFacility(r) === station.facility) && (String(r.completed_by || "").toLowerCase() === String(person.who || "").toLowerCase() || personKey(r.completed_by) === personKey(person.who)));
           await addRowNote(findTab("Prev Day by Person"), state.byPersonCols, personRow, text);
           toast("Note saved");
           paint();
