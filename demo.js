@@ -108,6 +108,8 @@
       ["Form", "Printing", "Printing", "SOLEMATE", "Unknown", 225, "", "", "", "", "", "", "", "8 (20m)", "", 8, 8, ""],
       ["Form", "Printing", "Printing", "SOLEMATE", "sam.printer@example.com", 225, "", "", "", "", "", "", "", "15 (30m)", "", 15, 15, ""],
       ["Form", "Production", "NEEDS_GLUING", "", "zach.smith@example.com", 225, "", "", "", "", "", "", "", "41 (1h 20m)", "", 41, 41, 2],
+      ["Form", "Production", "NEEDS_GLUING", "", "varun.addagulla+justiun.farrier@example.com", 225, "", "", "", "", "", "", "", "22 (40m)", "", 22, 22, 2],
+      ["Form", "Production", "NEEDS_GLUING", "", "varun.addagulla@example.com", 225, "", "", "", "", "", "", "", "88 (2h)", "", 88, 88, 2],
       ["Form", "Production", "NEEDS_GLUING", "", "jessica.stewart@example.com", 225, "", "", "", "", "", "", "", "63 (2h)", "", 63, 63, 2],
       ["Form", "Production", "NEEDS_GLUING", "", "vmakena@example.com", 225, "", "", "", "", "", "", "", "77 (2h)", "", 77, 77, 2],
       ["Form", "Production", "NEEDS_GLUING", "", "kept.worker+vmakena@example.com", 225, "", "", "", "", "", "", "", "8 (20m)", "", 8, 8, 2],

@@ -1313,6 +1313,7 @@
   // yatesh.makena+james.burhans shows as James Burhans. Anyone else after that
   // plus stays. A +vmakena tag on another mailbox is not Vmakena.
   // aankala+mcbryde is Mike McBryde. Other aankala mailboxes stay Aankala.
+  // varun.addagulla+justiun.farrier is Justin Farrier. Other varun mailboxes stay hidden.
   const HIDDEN_NAMES = [
     "pedro sanchez",
     "eric",
@@ -1329,7 +1330,9 @@
 
   function personLocal(who) {
     let local = String(who || "").split("@")[0].trim();
-    if (nameKey(local) === "aankala+mcbryde") return "Mike McBryde";
+    const keyed = nameKey(local);
+    if (keyed === "aankala+mcbryde") return "Mike McBryde";
+    if (keyed === "varun addagulla+justiun farrier" || keyed === "varun addagulla+justin farrier") return "Justin Farrier";
     const plus = local.indexOf("+");
     if (plus > 0 && nameKey(local.slice(0, plus)) === "yatesh makena") local = local.slice(plus + 1);
     else if (plus > 0) local = local.slice(0, plus);
